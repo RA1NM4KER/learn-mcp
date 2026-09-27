@@ -122,8 +122,8 @@ function sitePanel(panel: SitePanel, sessionId: string, isAutoOpen: boolean, err
 
     <p class="step-heading">Step 2. Copy your connection link</p>
     <div class="warning-callout">
-      <div class="warning-title">🚫 Don't click the link on that page</div>
       <p>Moodle's confirmation page shows a line that says <strong>&ldquo;Click here if the app does not open automatically.&rdquo;</strong> Clicking it just tries to open an app and won't work here.</p>
+      <div class="warning-title">🚫 Don't click the link on that page</div>
       <p class="warning-action">Instead: <strong>right-click that text</strong> (press and hold on mobile) and choose <strong>&ldquo;Copy Link Address&rdquo;</strong>.</p>
       <div class="demo-video-frame"><video class="demo-video" src="/copy-link-demo.mp4" muted autoplay loop playsinline></video></div>
       <p class="demo-caption">Watch: the correct way to copy the link, shown above.</p>

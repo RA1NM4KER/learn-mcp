@@ -11,6 +11,11 @@ const PANELS: SitePanel[] = [
 ];
 
 describe("renderSunlearnConnectPage — disconnect", () => {
+  it("explains why the Moodle link must not be opened before showing that warning", () => {
+    const html = renderSunlearnConnectPage({ sites: SITES, sessionId: "s1", panels: PANELS });
+    expect(html.indexOf("Moodle's confirmation page shows")).toBeLessThan(html.indexOf("Don't click the link on that page"));
+  });
+
   it("shows no disconnect action when disconnectFormAction is not provided", () => {
     const html = renderSunlearnConnectPage({ sites: SITES, sessionId: "s1", panels: PANELS });
     expect(html).not.toContain(">Disconnect<");
