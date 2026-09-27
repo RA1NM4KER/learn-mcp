@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MoodleClient } from "../src/moodle-client.js";
-import { courseOverview, upcomingAndOverdue } from "../src/tools/composed.js";
+import { classifyAssignmentEra, courseOverview, upcomingAndOverdue } from "../src/tools/composed.js";
 import { COMPOSED_TASK_POLICY } from "../src/policy.js";
 import type { SubRefSealer } from "../src/tools/tool-ref-helpers.js";
 
@@ -52,6 +52,45 @@ async function makeClient() {
 }
 
 const COURSE = { id: 2722, fullname: "Intro to Widgets", shortname: "WIDG101", progress: 8.3 };
+
+describe("classifyAssignmentEra", () => {
+  // Real production case: "Geo-Environmental Science - 154", a 2026 course
+  // (shortname 2026-64165-154), still carrying a "Prac 1 assignment" due
+  // 2024-11-11 with no cutoffdate — content inherited from a reused/reset
+  // course shell whose due dates were never updated.
+  const course2026 = { startdate: Date.UTC(2026, 0, 1) / 1000 };
+  const staleAssignment2024 = { duedate: Date.UTC(2024, 10, 11) / 1000 };
+
+  it("classifies an assignment due before its own course's start date as historical", () => {
+    expect(classifyAssignmentEra(course2026, staleAssignment2024)).toBe("historical");
+  });
+
+  it("classifies an assignment due within the course's active period as current", () => {
+    const dueDuringCourse = { duedate: Date.UTC(2026, 5, 1) / 1000 };
+    expect(classifyAssignmentEra(course2026, dueDuringCourse)).toBe("current");
+  });
+
+  it("classifies an assignment due yesterday in a current course as current (genuinely overdue)", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const longAgoStart = { startdate: now - 365 * 86400 };
+    const dueYesterday = { duedate: now - 86400 };
+    expect(classifyAssignmentEra(longAgoStart, dueYesterday)).toBe("current");
+  });
+
+  it("falls back to current when the course has no startdate metadata (conservative — never unsafely filters)", () => {
+    expect(classifyAssignmentEra({ startdate: 0 }, staleAssignment2024)).toBe("current");
+  });
+
+  it("keeps valid deadlines from a legitimate long-running/multi-year course as current", () => {
+    const longRunningCourse = { startdate: Date.UTC(2020, 0, 1) / 1000 };
+    const dueIn2024 = { duedate: Date.UTC(2024, 5, 1) / 1000 }; // after the course's own 2020 start
+    expect(classifyAssignmentEra(longRunningCourse, dueIn2024)).toBe("current");
+  });
+
+  it("treats a zero/missing duedate as current (not this helper's concern — callers already filter those out)", () => {
+    expect(classifyAssignmentEra(course2026, { duedate: 0 })).toBe("current");
+  });
+});
 
 describe("courseOverview", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -307,5 +346,124 @@ describe("upcomingAndOverdue", () => {
     expect(peak).toBeLessThanOrEqual(COMPOSED_TASK_POLICY.submissionStatusConcurrency);
     expect((text.match(/assignment ID:/g) ?? [])).toHaveLength(COMPOSED_TASK_POLICY.maxRendered);
     expect(text).toContain("additional assignments were omitted");
+  });
+
+  describe("stale assignments from reused Moodle course shells", () => {
+    // Production case: "Geo-Environmental Science / Geo-omgewingswetenskap -
+    // 154" (shortname 2026-64165-154) is a 2026 course whose active run
+    // begins in 2026, but still carried "Prac 1 assignment" due 2024-11-11
+    // with no cutoffdate — inherited from a reused/reset course shell. This
+    // rendered as a genuinely outstanding 2026 obligation.
+    const COURSE_2026 = { id: 3062, fullname: "Geo-Environmental Science / Geo-omgewingswetenskap - 154", shortname: "2026-64165-154", startdate: Date.UTC(2026, 0, 1) / 1000 };
+    const STALE_ASSIGNMENT = { id: 501, cmid: 1, name: "Prac 1 assignment", duedate: Date.UTC(2024, 10, 11) / 1000, cutoffdate: 0, grade: 100 };
+
+    it("1: does not show a 2024-due assignment in a 2026 course (no cutoffdate) under Overdue", async () => {
+      const client = await makeClient();
+      mockFetch.mockImplementation(routedFetchMock({
+        core_enrol_get_users_courses: [COURSE_2026],
+        mod_assign_get_assignments: { courses: [{ id: COURSE_2026.id, assignments: [STALE_ASSIGNMENT] }] },
+      }));
+
+      const text = await upcomingAndOverdue(client);
+
+      expect(text).not.toContain("### 🔴 Overdue");
+      expect(text).toContain("Historical course content");
+      expect(text).toContain("Prac 1 assignment");
+      expect(text).toContain(COURSE_2026.fullname);
+    });
+
+    it("2: a current assignment due yesterday in the same 2026 course still shows as Overdue", async () => {
+      const client = await makeClient();
+      const now = Math.floor(Date.now() / 1000);
+      const currentAssignment = { id: 502, cmid: 2, name: "Prac 2 assignment", duedate: now - 86400, cutoffdate: 0, grade: 100 };
+      mockFetch.mockImplementation(routedFetchMock({
+        core_enrol_get_users_courses: [COURSE_2026],
+        mod_assign_get_assignments: { courses: [{ id: COURSE_2026.id, assignments: [STALE_ASSIGNMENT, currentAssignment] }] },
+        mod_assign_get_submission_status: { lastattempt: { submission: { status: "not submitted" } } },
+      }));
+
+      const text = await upcomingAndOverdue(client);
+
+      expect(text).toContain("### 🔴 Overdue");
+      const overdueSection = text.split("### 🔴 Overdue")[1]!.split("###")[0]!;
+      expect(overdueSection).toContain("Prac 2 assignment");
+      expect(overdueSection).not.toContain("Prac 1 assignment");
+      expect(text).toContain("Historical course content");
+    });
+
+    it("3: a submitted stale/historical assignment is never actionable overdue", async () => {
+      const client = await makeClient();
+      mockFetch.mockImplementation(routedFetchMock({
+        core_enrol_get_users_courses: [COURSE_2026],
+        mod_assign_get_assignments: { courses: [{ id: COURSE_2026.id, assignments: [STALE_ASSIGNMENT] }] },
+        // Even if a submission somehow exists for it, it must never surface as overdue.
+        mod_assign_get_submission_status: { lastattempt: { submission: { status: "submitted" } } },
+      }));
+
+      const text = await upcomingAndOverdue(client);
+
+      expect(text).not.toContain("### 🔴 Overdue");
+      expect(text).not.toContain("### ⚫ Missed");
+      expect(text).toContain("Historical course content");
+      expect(text).toContain("Prac 1 assignment");
+    });
+
+    it("4: a course with no start/end metadata falls back conservatively — the old assignment still shows as Overdue", async () => {
+      const client = await makeClient();
+      const courseNoMetadata = { id: 3063, fullname: "Legacy Course With No Dates", shortname: "LEGACY", startdate: 0 };
+      mockFetch.mockImplementation(routedFetchMock({
+        core_enrol_get_users_courses: [courseNoMetadata],
+        mod_assign_get_assignments: { courses: [{ id: courseNoMetadata.id, assignments: [STALE_ASSIGNMENT] }] },
+        mod_assign_get_submission_status: { lastattempt: { submission: { status: "not submitted" } } },
+      }));
+
+      const text = await upcomingAndOverdue(client);
+
+      expect(text).not.toContain("Historical course content");
+      expect(text).toContain("### 🔴 Overdue");
+      expect(text).toContain("Prac 1 assignment");
+    });
+
+    it("5: a legitimate long-running/multi-year course keeps its valid deadlines visible", async () => {
+      const client = await makeClient();
+      const now = Math.floor(Date.now() / 1000);
+      const longRunningCourse = { id: 3064, fullname: "Long-Running Diploma Course", shortname: "DIPLOMA", startdate: now - 3 * 365 * 86400 };
+      const validRecentAssignment = { id: 503, cmid: 3, name: "Year 3 assignment", duedate: now - 86400, cutoffdate: 0, grade: 100 };
+      mockFetch.mockImplementation(routedFetchMock({
+        core_enrol_get_users_courses: [longRunningCourse],
+        mod_assign_get_assignments: { courses: [{ id: longRunningCourse.id, assignments: [validRecentAssignment] }] },
+        mod_assign_get_submission_status: { lastattempt: { submission: { status: "not submitted" } } },
+      }));
+
+      const text = await upcomingAndOverdue(client);
+
+      expect(text).not.toContain("Historical course content");
+      expect(text).toContain("### 🔴 Overdue");
+      expect(text).toContain("Year 3 assignment");
+    });
+
+    it("6: a reused shell with several stale assignments alongside current work prioritizes current work cleanly", async () => {
+      const client = await makeClient();
+      const now = Math.floor(Date.now() / 1000);
+      const staleAssignments = Array.from({ length: 4 }, (_, i) => ({
+        id: 600 + i, cmid: 10 + i, name: `Old Prac ${i + 1}`, duedate: Date.UTC(2024, i, 15) / 1000, cutoffdate: 0, grade: 100,
+      }));
+      const currentAssignment = { id: 700, cmid: 20, name: "Prac 1 (2026)", duedate: now - 3600, cutoffdate: 0, grade: 100 };
+      mockFetch.mockImplementation(routedFetchMock({
+        core_enrol_get_users_courses: [COURSE_2026],
+        mod_assign_get_assignments: { courses: [{ id: COURSE_2026.id, assignments: [...staleAssignments, currentAssignment] }] },
+        mod_assign_get_submission_status: { lastattempt: { submission: { status: "not submitted" } } },
+      }));
+
+      const text = await upcomingAndOverdue(client);
+
+      expect(text).toContain("### 🔴 Overdue");
+      const overdueSection = text.split("### 🔴 Overdue")[1]!.split("###")[0]!;
+      expect(overdueSection).toContain("Prac 1 (2026)");
+      for (const stale of staleAssignments) expect(overdueSection).not.toContain(stale.name);
+
+      expect(text).toContain("Historical course content");
+      for (const stale of staleAssignments) expect(text).toContain(stale.name);
+    });
   });
 });

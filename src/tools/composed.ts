@@ -147,6 +147,41 @@ export async function courseOverview(client: MoodleClient, courseId: number, sea
 
 const DUE_SOON_SECONDS = 3 * 24 * 60 * 60;
 
+/**
+ * Whether an assignment's due date is even compatible with belonging to its
+ * course's current run. A real production case: a 2026 course
+ * ("Geo-Environmental Science - 154", startdate in the 2026 academic year)
+ * still carried a "Prac 1 assignment" due 2024-11-11 with no cutoffdate —
+ * content inherited from a reused/reset Moodle course shell whose due dates
+ * were never updated, which rendered as a genuinely outstanding 2026
+ * obligation.
+ *
+ * The signal used is course.startdate (from core_enrol_get_users_courses,
+ * confirmed present on a real Moodle 4.5.8 server) versus the assignment's
+ * own duedate: a due date from BEFORE the course itself started cannot
+ * belong to the current run — Moodle courses don't have assignments due
+ * before the course exists — so this only ever fires for stale inherited
+ * content, never for a long-running course whose real deadlines all fall
+ * within (or after) its own start.
+ *
+ * Deliberately NOT an arbitrary "older than N months" cutoff, and
+ * deliberately NOT using enddate (frequently 0/open-ended on real courses,
+ * and a genuine final deadline can legitimately land at or after a course's
+ * nominal end — using it to exclude anything would risk hiding real
+ * outstanding work). Missing/zero startdate metadata is treated as
+ * "current": insufficient information to safely call something historical,
+ * so it isn't.
+ */
+export type AssignmentEra = "current" | "historical";
+
+export function classifyAssignmentEra(
+  course: Pick<MoodleCourse, "startdate">,
+  assignment: Pick<MoodleAssignment, "duedate">,
+): AssignmentEra {
+  if (!course.startdate || assignment.duedate <= 0) return "current";
+  return assignment.duedate < course.startdate ? "historical" : "current";
+}
+
 /** Purely date-derived — computed before submission status is known, used only to prioritize which candidates are worth an (expensive) submission-status lookup. */
 type TimingBucket = "overdue" | "due_soon" | "upcoming" | "closed";
 
@@ -174,6 +209,17 @@ interface TaskCandidate {
   courseName: string;
   assignment: MoodleAssignment;
   bucket: TimingBucket;
+}
+
+/** A historical candidate never needs a submission-status lookup — it isn't rendered as actionable. */
+interface HistoricalItem {
+  site: ConnectedSite;
+  courseIdLabel: number | string;
+  courseName: string;
+  title: string;
+  assignmentIdLabel: number | string;
+  dueDate: number;
+  dueDateFormatted: string;
 }
 
 function timingBucket(assignment: MoodleAssignment, now: number): TimingBucket {
@@ -223,26 +269,51 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
 
   const now = Math.floor(Date.now() / 1000);
   const candidates: TaskCandidate[] = [];
+  const historicalCandidates: TaskCandidate[] = [];
   for (const { site, value } of results) {
     if (!value.assignments) continue;
-    const courseNames = new Map(value.courses.map((c) => [c.id, c.fullname]));
+    const coursesById = new Map(value.courses.map((c) => [c.id, c]));
     for (const c of value.assignments.courses) {
+      const course = coursesById.get(c.id);
       for (const assignment of c.assignments) {
         if (assignment.duedate <= 0) continue;
-        candidates.push({
+        const candidate: TaskCandidate = {
           site,
           client: value.client,
           courseId: c.id,
-          courseName: courseNames.get(c.id) ?? `Course ${c.id}`,
+          courseName: course?.fullname ?? `Course ${c.id}`,
           assignment,
           bucket: timingBucket(assignment, now),
-        });
+        };
+        if (course && classifyAssignmentEra(course, assignment) === "historical") {
+          historicalCandidates.push(candidate);
+        } else {
+          candidates.push(candidate);
+        }
       }
     }
   }
   candidates.sort((a, b) => TIMING_BUCKET_ORDER[a.bucket] - TIMING_BUCKET_ORDER[b.bucket] || a.assignment.duedate - b.assignment.duedate);
   const omittedTasks = Math.max(0, candidates.length - COMPOSED_TASK_POLICY.maxRendered);
   const showSite = Boolean(multiSite && multiSite.additionalSites.length > 0);
+
+  historicalCandidates.sort((a, b) => a.assignment.duedate - b.assignment.duedate);
+  const omittedHistorical = Math.max(0, historicalCandidates.length - COMPOSED_TASK_POLICY.maxHistoricalRendered);
+  const historicalItems: HistoricalItem[] = [];
+  for (const { site, courseId, courseName, assignment } of historicalCandidates.slice(0, COMPOSED_TASK_POLICY.maxHistoricalRendered)) {
+    const [courseIdLabel, assignmentIdLabel] = multiSite
+      ? await Promise.all([multiSite.seal("course", site.id, courseId), multiSite.seal("assignment", site.id, assignment.id)])
+      : [courseId, assignment.id];
+    historicalItems.push({
+      site,
+      courseIdLabel,
+      courseName: truncateText(courseName, TEXT_OUTPUT_POLICY.maxLabelCharacters),
+      title: truncateText(assignment.name, TEXT_OUTPUT_POLICY.maxLabelCharacters),
+      assignmentIdLabel,
+      dueDate: assignment.duedate,
+      dueDateFormatted: formatDate(assignment.duedate),
+    });
+  }
 
   const tasks = await mapWithConcurrency(
     candidates.slice(0, COMPOSED_TASK_POLICY.maxRendered),
@@ -293,7 +364,7 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
     return a.dueDate - b.dueDate;
   });
 
-  if (tasks.length === 0) {
+  if (tasks.length === 0 && historicalItems.length === 0) {
     return unavailable.length > 0
       ? `No assignments with due dates found across your courses.\n\n_Temporarily unavailable: ${unavailable.join(", ")}._`
       : "No assignments with due dates found across your courses.";
@@ -325,6 +396,22 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
     lines.push("");
   }
 
+  if (historicalItems.length > 0) {
+    lines.push("### 🗄️ Historical course content");
+    lines.push(
+      "_These due dates fall before their own course's start date — almost certainly content inherited from a reused/reset course shell, not current obligations. Verify with your lecturer if unsure._",
+      "",
+    );
+    for (const h of historicalItems) {
+      const siteLabel = showSite ? ` — _${truncateText(h.site.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}_` : "";
+      lines.push(
+        `- **${h.title}** (${h.courseName})${siteLabel} — due ${h.dueDateFormatted} — assignment ID: \`${h.assignmentIdLabel}\`, course ID: \`${h.courseIdLabel}\``,
+      );
+    }
+    if (omittedHistorical) lines.push(`_Showing the ${COMPOSED_TASK_POLICY.maxHistoricalRendered} most recent historical items; ${omittedHistorical} more were omitted._`);
+    lines.push("");
+  }
+
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
@@ -338,7 +425,7 @@ export function registerComposedTools(server: McpServer, client: MoodleClient, c
 
   server.tool(
     "upcoming_and_overdue",
-    "Cross-course deadline view for the student: every assignment with a due date, across every connected SUNLearn environment, merged and sorted into Overdue / Due soon / Upcoming / Missed / Submitted, with submission and grading status already looked up. Use this instead of chaining moodle_list_courses + moodle_list_assignments + moodle_get_assignment per course when the student asks 'what's due' or 'am I behind on anything'.",
+    "Cross-course deadline view for the student: every assignment with a due date, across every connected SUNLearn environment, merged and sorted into Overdue / Due soon / Upcoming / Missed / Submitted, with submission and grading status already looked up. Assignments whose due date predates their own course's start (stale content inherited from a reused course shell) are set apart under 'Historical course content' instead of counted as outstanding work. Use this instead of chaining moodle_list_courses + moodle_list_assignments + moodle_get_assignment per course when the student asks 'what's due' or 'am I behind on anything'.",
     {},
     async () => ({
       content: [{ type: "text" as const, text: await upcomingAndOverdue(client, multiSite) }],

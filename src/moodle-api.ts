@@ -30,6 +30,14 @@ export const MoodleCourseSchema = MoodleObject.extend({
   fullname: z.string(),
   shortname: z.string(),
   progress: z.number().nullable().optional(),
+  // The course's own configured start, in Unix seconds — confirmed present
+  // on core_enrol_get_users_courses against a real Moodle 4.5.8 server.
+  // Used to tell genuinely current coursework apart from stale content
+  // inherited from a reused/reset course shell (see classifyAssignmentEra in
+  // tools/composed.ts). Deliberately not adding `enddate` here too: it's
+  // frequently 0 (open-ended) on real courses and unreliable as a signal —
+  // classifyAssignmentEra only needs startdate.
+  startdate: z.number().optional().default(0),
 });
 export type MoodleCourse = z.infer<typeof MoodleCourseSchema>;
 

@@ -16,6 +16,7 @@ export const COURSE_NOTICE_POLICY = { maxRendered: 10 } as const;
 export const COMPOSED_TASK_POLICY = {
   maxRendered: 100,
   submissionStatusConcurrency: 4,
+  maxHistoricalRendered: 20,
 } as const;
 export const MULTI_SITE_POLICY = { fanOutConcurrency: 4 } as const;
 
