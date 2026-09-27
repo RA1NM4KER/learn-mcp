@@ -99,7 +99,7 @@ function siteRow(site: ConnectSiteStatus, sessionId: string, disconnectFormActio
           <button type="submit" class="btn btn-ghost btn-sm">Disconnect</button>
         </form>`
       : "";
-    right = `<div class="site-row-right"><span class="badge badge-secondary">Connected</span>${disconnect}</div>`;
+    right = `<div class="site-row-right"><span class="badge badge-success">Connected</span>${disconnect}</div>`;
   } else {
     // Pure client-side reveal of that site's own already-rendered (closed) dialog —
     // no form submission, no navigation, no network round trip.

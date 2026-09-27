@@ -14,6 +14,7 @@ export const PAGE_SHELL_CSS = `
     --border: #e4e4e7; --card: #ffffff;
     --primary: #7a2748; --primary-hover: #5d1d37; --primary-foreground: #fafafa;
     --secondary: #f4f4f5; --secondary-foreground: #18181b;
+    --success: #dcfce7; --success-foreground: #166534;
     --destructive: #ef4444; --destructive-foreground: #fef2f2; --destructive-border: #fecaca;
     --ring: #7a2748;
     --radius: 0.5rem; --radius-lg: 0.75rem;
@@ -58,6 +59,7 @@ export const PAGE_SHELL_CSS = `
   /* Badge */
   .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 10px; font-size: 0.75rem; font-weight: 600; line-height: 1.6; }
   .badge-secondary { background: var(--secondary); color: var(--secondary-foreground); }
+  .badge-success { background: var(--success); color: var(--success-foreground); }
 
   /* Alert (destructive variant) */
   .error { color: #b91c1c; background: #fef2f2; border: 1px solid var(--destructive-border); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px; font-size: 0.85rem; }

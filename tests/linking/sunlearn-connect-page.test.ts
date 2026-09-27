@@ -14,6 +14,7 @@ describe("renderSunlearnConnectPage — disconnect", () => {
   it("shows no disconnect action when disconnectFormAction is not provided", () => {
     const html = renderSunlearnConnectPage({ sites: SITES, sessionId: "s1", panels: PANELS });
     expect(html).not.toContain(">Disconnect<");
+    expect(html).toContain('class="badge badge-success">Connected<');
   });
 
   it("shows a Disconnect action only on connected sites once disconnectFormAction is provided", () => {
