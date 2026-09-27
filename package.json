@@ -1,10 +1,10 @@
 {
-  "name": "stemlearn-mcp",
+  "name": "sunlearn-mcp",
   "version": "0.1.0",
-  "description": "Read-only local MCP server for STEMLearn Moodle students.",
+  "description": "Read-only local MCP server for SUNLearn Moodle students.",
   "type": "module",
   "bin": {
-    "stemlearn-mcp": "./dist/server.js"
+    "sunlearn-mcp": "./dist/server.js"
   },
   "files": [
     "dist",

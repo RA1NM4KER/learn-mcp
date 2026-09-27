@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createStemLearnServer, STEMLEARN_SERVER_INFO } from "../src/create-server.js";
+import { createSunLearnServer, SUNLEARN_SERVER_INFO } from "../src/create-server.js";
 import { createAnchorOnlyResolver } from "../src/course-ref-resolver.js";
 import type { MoodleClient } from "../src/moodle-client.js";
 
@@ -10,11 +10,11 @@ type RegisteredSurface = {
 };
 
 describe("shared MCP server factory", () => {
-  it("builds the complete transport-independent STEMLearn surface", () => {
+  it("builds the complete transport-independent SUNLearn surface", () => {
     const client = {} as MoodleClient;
-    const server = createStemLearnServer(client, createAnchorOnlyResolver(client)) as unknown as RegisteredSurface;
+    const server = createSunLearnServer(client, createAnchorOnlyResolver(client)) as unknown as RegisteredSurface;
 
-    expect(STEMLEARN_SERVER_INFO).toEqual({ name: "stemlearn-mcp", version: "0.1.0" });
+    expect(SUNLEARN_SERVER_INFO).toEqual({ name: "sunlearn-mcp", version: "0.1.0" });
     expect(Object.keys(server._registeredTools)).toContain("moodle_list_courses");
     expect(Object.keys(server._registeredTools)).toContain("moodle_download_file");
     expect(Object.keys(server._registeredTools)).toContain("upcoming_and_overdue");

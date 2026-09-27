@@ -1,7 +1,7 @@
 import type { OAuthResourceContext } from "@cloudflare/workers-oauth-provider";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { MoodleClient, MoodleTimeoutError } from "./moodle-client.js";
-import { createStemLearnServer } from "./create-server.js";
+import { createSunLearnServer } from "./create-server.js";
 import type { MultiSiteContext } from "./multi-site-context.js";
 import { CourseRefResolver, createAnchorOnlyResolver } from "./course-ref-resolver.js";
 import { GlobalRefStore } from "./global-ref.js";
@@ -126,7 +126,7 @@ export async function handleMcpRequest(
       : await resolveMoodleConfigForOAuthUser(userId, env);
     const client = await MoodleClient.create(config);
     const { resolver, multiSite } = await buildCourseContext(userId, client, config.baseUrl, env);
-    const server = createStemLearnServer(client, resolver, multiSite);
+    const server = createSunLearnServer(client, resolver, multiSite);
     // Stateless (no sessionIdGenerator) + JSON response mode: each request is
     // handled by a fresh transport/client, and the JSON-RPC response comes
     // back as a normal application/json body instead of an SSE stream — this

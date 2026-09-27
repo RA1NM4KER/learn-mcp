@@ -105,7 +105,7 @@ describe("handleMcpRequest", () => {
     );
     expect(response.status).toBe(200);
     const result = (await response.json()) as { result: { serverInfo: { name: string } } };
-    expect(result.result.serverInfo).toEqual({ name: "stemlearn-mcp", version: "0.1.0" });
+    expect(result.result.serverInfo).toEqual({ name: "sunlearn-mcp", version: "0.1.0" });
     const [, requestInit] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(String(requestInit.body)).toContain(`wstoken=${env.MOODLE_TOKEN}`);
   });

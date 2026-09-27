@@ -6,10 +6,10 @@ import type { CourseRefResolver } from "./course-ref-resolver.js";
 import { registerResources } from "./resources/index.js";
 import { registerPrompts } from "./prompts/index.js";
 
-export const STEMLEARN_SERVER_INFO = { name: "stemlearn-mcp", version: "0.1.0" } as const;
+export const SUNLEARN_SERVER_INFO = { name: "sunlearn-mcp", version: "0.1.0" } as const;
 
 /**
- * Build the transport-independent STEMLearn MCP surface. `client` is always
+ * Build the transport-independent SUNLearn MCP surface. `client` is always
  * this request's single anchor-site MoodleClient. `courseRefResolver` is
  * what every course/assignment/quiz/forum-SCOPED tool uses instead,
  * dispatching a legacy plain numeric id or a sealed multi-site reference to
@@ -21,12 +21,12 @@ export const STEMLEARN_SERVER_INFO = { name: "stemlearn-mcp", version: "0.1.0" }
  * notifications) uses to additionally fan out across every other connected
  * SUNLearn site (see multi-site-context.ts).
  */
-export function createStemLearnServer(
+export function createSunLearnServer(
   client: MoodleClient,
   courseRefResolver: CourseRefResolver,
   multiSite?: MultiSiteContext,
 ): McpServer {
-  const server = new McpServer(STEMLEARN_SERVER_INFO);
+  const server = new McpServer(SUNLEARN_SERVER_INFO);
   registerAllTools(server, client, courseRefResolver, multiSite);
   registerResources(server, client);
   registerPrompts(server);

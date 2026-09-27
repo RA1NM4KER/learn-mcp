@@ -1,6 +1,6 @@
-# STEMLearn MCP
+# SUNLearn MCP
 
-Read-only local MCP server for a STEMLearn student account. It runs over
+Read-only local MCP server for a SUNLearn student account. It runs over
 stdio and uses the Moodle permissions already attached to your token.
 
 ## Setup
@@ -12,7 +12,7 @@ npm run auth
 npm run build
 ```
 
-`npm run auth` opens the normal STEMLearn SSO flow and saves the resulting
+`npm run auth` opens the normal SUNLearn SSO flow and saves the resulting
 Moodle token to `.auth/token.json` with restrictive permissions. The server
 loads that file automatically. For CI, `MOODLE_URL` and `MOODLE_TOKEN` are
 also supported; Moodle URLs must be HTTPS except `localhost`, `127.0.0.1`,
@@ -21,11 +21,11 @@ or `::1` development addresses.
 Register the built server with an MCP client:
 
 ```bash
-claude mcp add stemlearn -- node /absolute/path/to/stemlearn-mcp/dist/server.js
+claude mcp add sunlearn -- node /absolute/path/to/sunlearn-mcp/dist/server.js
 ```
 
 This repository supports two deployment modes, both built from the same
-`createStemLearnServer(client)` registration:
+`createSunLearnServer(client)` registration:
 
 - **Local (stdio)** — `src/server.ts`, using the local credential model above
   (`.auth/token.json` or `MOODLE_URL`/`MOODLE_TOKEN` env vars). This remains
@@ -36,7 +36,7 @@ This repository supports two deployment modes, both built from the same
   a standards-compliant MCP client discovers `/.well-known/oauth-protected-resource/mcp`
   and `/.well-known/oauth-authorization-server`, registers via Dynamic Client
   Registration (`/oauth/register`) or a Client ID Metadata Document, and
-  completes `/authorize` — which runs the STEMLearn account-linking flow as
+  completes `/authorize` — which runs the SUNLearn account-linking flow as
   its authentication step — before receiving a token scoped to `stemlearn:read`
   (+ optional `offline_access` for refresh tokens). A legacy static-bearer
   lane (`Authorization: Bearer <MCP_ACCESS_TOKEN>`, constant-time compared)
@@ -51,10 +51,10 @@ This repository supports two deployment modes, both built from the same
   codes/tokens/clients/grants — separate from our D1 linking data). Deploy
   with `npm run deploy` (`wrangler deploy`).
 
-### Account linking (STEMLearn → remote MCP)
+### Account linking (SUNLearn → remote MCP)
 
 `GET /connect` serves a 3-step page (sign in → copy connection link → paste
-connection link) that lets a student link their own STEMLearn account without
+connection link) that lets a student link their own SUNLearn account without
 ever giving this app their Stellenbosch/Microsoft password: they authenticate
 entirely on official SU/Microsoft pages, then paste back the resulting
 connection link. The link is verified (including a live

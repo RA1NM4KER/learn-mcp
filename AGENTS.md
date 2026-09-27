@@ -4,14 +4,14 @@ Guidance for coding agents (Claude Code, Codex, etc.) working in this repo.
 
 ## What this is
 
-STEMLearn MCP is a **read-only** MCP server over a student's Moodle account.
+SUNLearn MCP is a **read-only** MCP server over a student's Moodle account.
 It never calls a Moodle write API and never exposes Moodle tokens,
 authenticated Moodle file URLs, or filesystem paths. Local **stdio is the
 primary supported deployment model** (`src/server.ts`). `src/worker.ts`
 (Cloudflare Worker, `wrangler.toml`) is the remote Streamable HTTP transport
 at `/mcp`, now **OAuth 2.1-protected** via `@cloudflare/workers-oauth-provider`
 (`src/oauth/provider.ts`) — a genuine per-user authorization-code+PKCE flow,
-with STEMLearn account linking (see below) as the authentication step. A
+with SUNLearn account linking (see below) as the authentication step. A
 legacy static-bearer lane (`MCP_ACCESS_TOKEN`, `resolveExternalToken` in
 `src/oauth/provider.ts`) is preserved alongside it during migration, resolving
 only the fixed `DEFAULT_USER_ID` identity — the two lanes are deliberately
@@ -20,7 +20,7 @@ and must never be allowed to share identity semantics. Do not weaken PKCE,
 redirect-URI validation, or the OAuth resource/audience checks; do not add a
 mode where `/mcp` serves any request unauthenticated by either lane.
 
-`src/linking/*` implements STEMLearn account linking: a student completes
+`src/linking/*` implements SUNLearn account linking: a student completes
 official SU/Microsoft login and pastes back the resulting connection link,
 which is verified and stored as an encrypted, per-user Moodle credential in
 D1. It now authenticates two different call sites: the legacy bearer-gated
@@ -61,7 +61,7 @@ Config/Auth (config.ts)
 - Keep MCP rendering (markdown strings, tool schemas) out of
   `moodle-client.ts`/`moodle-loaders.ts`, and keep transport code (stdio vs.
   Worker specifics) out of tool/resource/prompt registration.
-- Use `createStemLearnServer()` (`create-server.ts`) as the single place that
+- Use `createSunLearnServer()` (`create-server.ts`) as the single place that
   registers tools, resources, and prompts. Do not duplicate that
   registration between `server.ts` and `worker.ts`.
 
