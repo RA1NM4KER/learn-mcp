@@ -5,13 +5,10 @@ import { RefSchema, withResolvedCourseListing, withResolvedRef, type SubRefSeale
 import { loadAssignments, loadCourseContents, loadSubmissionStatus } from "../moodle-loaders.js";
 import { ASSIGNMENT_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { truncateText } from "../text.js";
+import { formatMoodleDateTime } from "../format-date.js";
 
 function formatDate(ts: number): string {
-  if (!ts) return "No due date";
-  return new Date(ts * 1000).toLocaleString("en-CA", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  return ts ? formatMoodleDateTime(ts) : "No due date";
 }
 
 export async function listAssignments(client: MoodleClient, courseId: number, sealer?: SubRefSealer): Promise<string> {

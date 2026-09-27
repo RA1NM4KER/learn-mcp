@@ -1,21 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { MoodleClient } from "../moodle-client.js";
-import type { Config } from "../config.js";
-import type { SunlearnSite } from "../sunlearn-sites.js";
+import type { MoodleClient } from "../moodle-client.js";
 import type { CourseRefResolver } from "../course-ref-resolver.js";
 import { RefSchema, withResolvedRef } from "./tool-ref-helpers.js";
 import { sanitizeAndTruncateHtml, truncateText } from "../text.js";
-import { COURSE_NOTICE_POLICY, COURSE_STRUCTURE_POLICY, TEXT_OUTPUT_POLICY, mapWithConcurrency } from "../policy.js";
+import { COURSE_NOTICE_POLICY, COURSE_STRUCTURE_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { loadCourseContents, loadEnrolledCourses } from "../moodle-loaders.js";
-
-/** Enables moodle_list_courses to aggregate across every SUNLearn site a user has connected, beyond the anchor `client`. */
-export interface MultiSiteCourseListing {
-  additionalSites: readonly { site: SunlearnSite; config: Config }[];
-  anchorSiteName: string;
-  sealCourseId: (siteId: string, courseId: number) => Promise<string>;
-}
-
-const ADDITIONAL_SITE_CONCURRENCY = 4;
+import { mapAccountWideSites, type MultiSiteContext } from "../multi-site-context.js";
 
 export interface CourseNotice {
   sectionName: string;
@@ -55,12 +45,11 @@ export function hasConflictingNoticeDates(notices: readonly CourseNotice[]): boo
   return [...datesByActivity.values()].some((dates) => dates.size > 1);
 }
 
-export async function listCourses(client: MoodleClient, multiSite?: MultiSiteCourseListing): Promise<string> {
-  const anchorCourses = await loadEnrolledCourses(client);
-
+export async function listCourses(client: MoodleClient, multiSite?: MultiSiteContext): Promise<string> {
   // Exactly today's single-site rendering when there is nothing else connected —
   // zero behavior change for the common (single SUNLearn site) case.
   if (!multiSite || multiSite.additionalSites.length === 0) {
+    const anchorCourses = await loadEnrolledCourses(client);
     if (anchorCourses.length === 0) return "You are not enrolled in any courses.";
     const displayed = anchorCourses.slice(0, 100);
     const lines = displayed.map(
@@ -71,27 +60,11 @@ export async function listCourses(client: MoodleClient, multiSite?: MultiSiteCou
 
   type Row = { siteName: string; fullname: string; shortname: string; idLabel: string };
   const rows: Row[] = [];
-  for (const c of anchorCourses) {
-    rows.push({ siteName: multiSite.anchorSiteName, fullname: c.fullname, shortname: c.shortname, idLabel: String(c.id) });
-  }
 
-  const unavailable: string[] = [];
-  const perSiteResults = await mapWithConcurrency(multiSite.additionalSites, ADDITIONAL_SITE_CONCURRENCY, async ({ site, config }) => {
-    try {
-      const siteClient = await MoodleClient.create(config);
-      const courses = await loadEnrolledCourses(siteClient);
-      return { site, courses };
-    } catch {
-      return { site, courses: null };
-    }
-  });
-  for (const { site, courses } of perSiteResults) {
-    if (courses === null) {
-      unavailable.push(site.name);
-      continue;
-    }
+  const { results, unavailable } = await mapAccountWideSites(client, multiSite, (_site, siteClient) => loadEnrolledCourses(siteClient));
+  for (const { site, isAnchor, value: courses } of results) {
     for (const c of courses) {
-      const idLabel = await multiSite.sealCourseId(site.id, c.id);
+      const idLabel = isAnchor ? String(c.id) : String(await multiSite.seal("course", site.id, c.id));
       rows.push({ siteName: site.name, fullname: c.fullname, shortname: c.shortname, idLabel });
     }
   }
@@ -106,7 +79,7 @@ export async function listCourses(client: MoodleClient, multiSite?: MultiSiteCou
   const notes = [
     rows.length > displayed.length ? "_Showing the first 100 courses._" : "",
     unavailable.length > 0 ? `_Temporarily unavailable: ${unavailable.map((n) => truncateText(n, TEXT_OUTPUT_POLICY.maxLabelCharacters)).join(", ")}._` : "",
-    `_IDs from ${multiSite.anchorSiteName} work with every other tool; IDs from other environments currently only work with this listing._`,
+    "_Every ID shown above — including opaque ones — can be passed directly into any other tool (moodle_get_course, moodle_list_assignments, moodle_get_grades, course_overview, etc.) exactly as given._",
   ].filter(Boolean);
   return truncateText(`## Your Courses\n\n${lines.join("\n")}${notes.length ? `\n\n${notes.join("\n")}` : ""}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
@@ -179,7 +152,7 @@ export function registerCourseTools(
   server: McpServer,
   client: MoodleClient,
   courseRefResolver: CourseRefResolver,
-  multiSite?: MultiSiteCourseListing,
+  multiSite?: MultiSiteContext,
 ): void {
   server.tool(
     "moodle_list_courses",

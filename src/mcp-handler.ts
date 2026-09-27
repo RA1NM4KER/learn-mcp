@@ -2,7 +2,7 @@ import type { OAuthResourceContext } from "@cloudflare/workers-oauth-provider";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { MoodleClient, MoodleTimeoutError } from "./moodle-client.js";
 import { createStemLearnServer } from "./create-server.js";
-import type { MultiSiteCourseListing } from "./tools/courses.js";
+import type { MultiSiteContext } from "./multi-site-context.js";
 import { CourseRefResolver, createAnchorOnlyResolver } from "./course-ref-resolver.js";
 import { GlobalRefStore } from "./global-ref.js";
 import {
@@ -55,19 +55,22 @@ function jsonRpcParseErrorResponse(): Response {
 
 /**
  * Builds this request's course/assignment/quiz/forum reference resolver
- * (src/course-ref-resolver.ts) and the moodle_list_courses aggregation
- * context, sharing one GlobalRefStore so every sealed id in a response uses
- * the exact same envelope/key regardless of which tool minted it. Building a
- * MoodleClient for a non-anchor site is always deferred to the resolver's
- * own lazy cache — a request for an unrelated tool never pays the cost of
- * contacting every connected SUNLearn instance.
+ * (src/course-ref-resolver.ts) and the account-wide multi-site context every
+ * account-wide tool (course listing, cross-course deadlines, notifications)
+ * uses to fan out beyond the anchor (src/multi-site-context.ts), sharing one
+ * GlobalRefStore so every sealed id in a response uses the exact same
+ * envelope/key regardless of which tool minted it. Building a MoodleClient
+ * for a non-anchor site is always deferred — either to the resolver's own
+ * lazy cache (single-course tools) or to mapAccountWideSites (account-wide
+ * tools) — a request for an unrelated tool never pays the cost of contacting
+ * every connected SUNLearn instance.
  */
 async function buildCourseContext(
   userId: string,
   anchorClient: MoodleClient,
   anchorBaseUrl: string,
   env: Env,
-): Promise<{ resolver: CourseRefResolver; multiSiteCourses?: MultiSiteCourseListing }> {
+): Promise<{ resolver: CourseRefResolver; multiSite?: MultiSiteContext }> {
   const anchorSite = getSiteByBaseUrl(anchorBaseUrl);
   if (!anchorSite || !env.CREDENTIAL_ENCRYPTION_KEY) {
     return { resolver: createAnchorOnlyResolver(anchorClient) };
@@ -83,12 +86,12 @@ async function buildCourseContext(
   const additionalSites = allConfigs.filter(({ site }) => site.baseUrl !== anchorSite.baseUrl);
   if (additionalSites.length === 0) return { resolver };
 
-  const multiSiteCourses: MultiSiteCourseListing = {
+  const multiSite: MultiSiteContext = {
+    anchorSite: { id: anchorSite.id, name: anchorSite.name },
     additionalSites,
-    anchorSiteName: anchorSite.name,
-    sealCourseId: async (siteId, courseId) => String(await resolver.sealIfNeeded("course", siteId, courseId)),
+    seal: (kind, siteId, id) => resolver.sealIfNeeded(kind, siteId, id),
   };
-  return { resolver, multiSiteCourses };
+  return { resolver, multiSite };
 }
 
 export async function handleMcpRequest(
@@ -122,8 +125,8 @@ export async function handleMcpRequest(
       ? await resolveMoodleConfig(userId, env)
       : await resolveMoodleConfigForOAuthUser(userId, env);
     const client = await MoodleClient.create(config);
-    const { resolver, multiSiteCourses } = await buildCourseContext(userId, client, config.baseUrl, env);
-    const server = createStemLearnServer(client, resolver, multiSiteCourses);
+    const { resolver, multiSite } = await buildCourseContext(userId, client, config.baseUrl, env);
+    const server = createStemLearnServer(client, resolver, multiSite);
     // Stateless (no sessionIdGenerator) + JSON response mode: each request is
     // handled by a fresh transport/client, and the JSON-RPC response comes
     // back as a normal application/json body instead of an SSE stream — this

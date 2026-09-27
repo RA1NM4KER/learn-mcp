@@ -6,7 +6,8 @@ import { RefSchema } from "./tool-ref-helpers.js";
 import { sanitizeAndTruncateHtml, truncateText } from "../text.js";
 import { CALENDAR_EVENT_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { loadActionCalendarEvents, loadCalendarEvents, loadEnrolledCourses } from "../moodle-loaders.js";
-import type { MoodleCalendarEvent } from "../moodle-api.js";
+import { eventCourseId, type MoodleCalendarEvent } from "../moodle-api.js";
+import { formatMoodleDateTime } from "../format-date.js";
 
 // core_calendar_get_action_events_by_timesort only returns events with a
 // student-facing "action" (submit, attempt, etc). It silently omits plain
@@ -30,13 +31,6 @@ async function getPlainCalendarEvents(
   });
   const data = await loadCalendarEvents(client, params);
   return data.events;
-}
-
-function formatDate(ts: number): string {
-  return new Date(ts * 1000).toLocaleString("en-CA", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
 }
 
 export async function getCalendarEvents(
@@ -65,7 +59,7 @@ export async function getCalendarEvents(
     return true;
   });
   if (courseId) {
-    events = events.filter((e) => e.courseid === courseId);
+    events = events.filter((e) => eventCourseId(e) === courseId);
   }
   events.sort((a, b) => a.timestart - b.timestart);
   events = events.slice(0, CALENDAR_EVENT_POLICY.maxRendered);
@@ -79,7 +73,8 @@ export async function getCalendarEvents(
   // Group by course
   const byCourse = new Map<string, MoodleCalendarEvent[]>();
   for (const event of events) {
-    const key = truncateText(event.course?.fullname ?? courseNames.get(event.courseid) ?? `Course ${event.courseid}`, TEXT_OUTPUT_POLICY.maxLabelCharacters);
+    const eventCourse = eventCourseId(event);
+    const key = truncateText(event.course?.fullname ?? courseNames.get(eventCourse) ?? `Course ${eventCourse}`, TEXT_OUTPUT_POLICY.maxLabelCharacters);
     const courseEvents = byCourse.get(key);
     if (courseEvents) courseEvents.push(event);
     else byCourse.set(key, [event]);
@@ -91,7 +86,7 @@ export async function getCalendarEvents(
     lines.push(`### ${courseName}`);
     for (const e of courseEvents) {
       const type = e.eventtype ? `\`${truncateText(e.eventtype, TEXT_OUTPUT_POLICY.maxLabelCharacters)}\`` : "";
-      lines.push(`- **${truncateText(e.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** — ${formatDate(e.timestart)} ${type}`);
+      lines.push(`- **${truncateText(e.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** — ${formatMoodleDateTime(e.timestart)} ${type}`);
       const desc = e.description
         ? sanitizeAndTruncateHtml(e.description, TEXT_OUTPUT_POLICY.maxCalendarDescriptionCharacters)
         : "";

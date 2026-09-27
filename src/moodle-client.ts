@@ -160,7 +160,20 @@ export class MoodleClient {
       throw new MoodleClientError("Moodle API request was rejected. Check that you still have access.", "api");
     }
     const parsed = schema.safeParse(data);
-    if (!parsed.success) throw new MoodleValidationError();
+    if (!parsed.success) {
+      // Never log the raw payload or the token — only the wsfunction and the
+      // Zod issue paths/codes, so a schema mismatch against a Moodle version
+      // this server hasn't seen yet is diagnosable from Cloudflare's
+      // invocation logs without collapsing into an opaque, undebuggable
+      // "unexpected response" for every mismatch (this is how the calendar
+      // schema bug above went unnoticed against real Moodle 4.5.8 traffic).
+      console.error(
+        "MoodleValidationError",
+        wsfunction,
+        JSON.stringify(parsed.error.issues.map((issue) => ({ path: issue.path.join("."), code: issue.code, message: issue.message }))),
+      );
+      throw new MoodleValidationError();
+    }
     return parsed.data;
   }
 

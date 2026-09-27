@@ -5,10 +5,10 @@ import { RefSchema, withResolvedCourseListing, withResolvedRef, type SubRefSeale
 import { QUIZ_ATTEMPT_POLICY, QUIZ_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { loadCourseContents, loadQuizAttempts, loadQuizzes } from "../moodle-loaders.js";
 import { truncateText } from "../text.js";
+import { formatMoodleDateTime } from "../format-date.js";
 
 function formatDate(ts: number): string {
-  if (!ts) return "—";
-  return new Date(ts * 1000).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" });
+  return ts ? formatMoodleDateTime(ts) : "—";
 }
 
 function formatDuration(seconds: number): string {

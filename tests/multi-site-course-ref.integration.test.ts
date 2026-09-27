@@ -8,6 +8,7 @@ import { registerAssignmentTools } from "../src/tools/assignments.js";
 import { registerFileTools } from "../src/tools/files.js";
 import { registerComposedTools } from "../src/tools/composed.js";
 import { getSiteById } from "../src/sunlearn-sites.js";
+import type { MultiSiteContext } from "../src/multi-site-context.js";
 
 // End-to-end proof that a single opaque course reference — exactly the kind
 // moodle_list_courses would hand back for a course on a non-anchor SUNLearn
@@ -179,6 +180,54 @@ describe("opaque course ref flowing from listing into every course-scoped tool",
     expect(result.content[0]!.text).toContain("Financial Accounting 178");
   });
 
+  it("course_overview seals a non-anchor assignment id, and that exact ref works unchanged in moodle_get_assignment", async () => {
+    // Regression: course_overview used to render `ID: <raw numeric id>` for
+    // an upcoming assignment even on a non-anchor site — moodle_get_assignment
+    // has no way to know that raw id belongs to a different Moodle instance,
+    // so it silently routed it to the anchor and failed. course_overview must
+    // seal it exactly like moodle_list_assignments does (same SubRefSealer).
+    const { resolver, refStore, anchorClient } = await makeResolver();
+    const sealedCourseRef = await refStore.seal({ userId: "user1", siteId: "emslearn", kind: "course", id: 100 });
+    const now = Math.floor(Date.now() / 1000);
+
+    mockFetch.mockImplementation(
+      routedFetch({
+        "emslearn.sun.ac.za": {
+          core_webservice_get_site_info: siteInfo("EMSLearn"),
+          core_enrol_get_users_courses: [{ id: 100, fullname: "Financial Accounting 178", shortname: "REK178" }],
+          core_course_get_contents: [{ id: 100, name: "Week 1", summary: "", modules: [] }],
+          mod_assign_get_assignments: {
+            courses: [{ id: 100, assignments: [{ id: 6326, cmid: 1, name: "Practical 2", duedate: now + 86400, grade: 100 }] }],
+          },
+          gradereport_user_get_grade_items: { usergrades: [{ courseid: 100, gradeitems: [] }] },
+          mod_assign_get_submission_status: { lastattempt: { submission: { status: "submitted" } } },
+        },
+      }),
+    );
+
+    const { server, handlers } = captureTool();
+    registerComposedTools(server, anchorClient, resolver);
+    registerAssignmentTools(server, resolver);
+
+    const overview = await handlers.get("course_overview")!({ courseId: sealedCourseRef });
+    expect(overview.isError).toBeFalsy();
+    const overviewText = overview.content[0]!.text;
+    expect(overviewText).toContain("Practical 2");
+    // The raw numeric id must never appear unsealed — only an opaque r_... ref.
+    expect(overviewText).not.toContain("ID: `6326`");
+    // Matches the assignment line's "(ID: `r_...`)" specifically, not the earlier "Course ID: `r_...`" line.
+    const sealedAssignmentRef = /\(ID: `(r_[^`]+)`\)/.exec(overviewText)?.[1];
+    expect(sealedAssignmentRef).toBeDefined();
+
+    // Also: the "Course ID:" line itself must be a usable ref, not the raw internal Moodle id.
+    expect(overviewText).not.toContain("Course ID: `100`");
+    expect(overviewText).toMatch(/Course ID: `r_/);
+
+    const assignmentResult = await handlers.get("moodle_get_assignment")!({ assignmentId: sealedAssignmentRef });
+    expect(assignmentResult.isError).toBeFalsy();
+    expect(assignmentResult.content[0]!.text).toContain("submitted");
+  });
+
   it("the identical numeric course id (100) on two different sites resolves to two different courses", async () => {
     const { resolver, refStore } = await makeResolver();
     const stemRef = 100; // legacy plain number — always the anchor site
@@ -268,5 +317,54 @@ describe("opaque course ref flowing from listing into every course-scoped tool",
   it("rejects the unknown site registered by getSiteById as a sanity check on the fixture itself", () => {
     expect(getSiteById("emslearn")).toBeDefined();
     expect(getSiteById("not-a-real-site")).toBeUndefined();
+  });
+});
+
+describe("upcoming_and_overdue against the exact production topology that reproduced the bug", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("finds deadlines on a secondary site when the anchor account has zero courses", async () => {
+    // Regression: registerComposedTools used to pass only the single anchor
+    // MoodleClient into upcomingAndOverdue(client). A real account with six
+    // courses on a non-anchor SUNLearn environment and zero on the anchor got
+    // "You are not enrolled in any courses." even though the courses (and
+    // their deadlines) were right there on the other connected site.
+    const { resolver, anchorClient } = await makeResolver();
+    const now = Math.floor(Date.now() / 1000);
+    const multiSite: MultiSiteContext = {
+      anchorSite: { id: "stemlearn", name: "STEMLearn" },
+      additionalSites: [{ site: getSiteById("emslearn")!, config: emsConfig() }],
+      seal: (kind, siteId, id) => resolver.sealIfNeeded(kind, siteId, id),
+    };
+
+    mockFetch.mockImplementation(
+      routedFetch({
+        "stemlearn.sun.ac.za": {
+          core_enrol_get_users_courses: [],
+        },
+        "emslearn.sun.ac.za": {
+          core_webservice_get_site_info: siteInfo("EMSLearn", ["mod_assign_get_assignments", "mod_assign_get_submission_status"]),
+          core_enrol_get_users_courses: [{ id: 100, fullname: "Financial Accounting 178", shortname: "REK178" }],
+          mod_assign_get_assignments: {
+            courses: [{ id: 100, assignments: [{ id: 55, cmid: 1, name: "REK178 Test 1", duedate: now - 3600, cutoffdate: 0, grade: 100 }] }],
+          },
+          mod_assign_get_submission_status: { lastattempt: { submission: { status: "not submitted" } } },
+        },
+      }),
+    );
+
+    const { server, handlers } = captureTool();
+    registerComposedTools(server, anchorClient, resolver, multiSite);
+    const result = await handlers.get("upcoming_and_overdue")!({});
+
+    expect(result.isError).toBeFalsy();
+    const text = result.content[0]!.text;
+    expect(text).not.toContain("not enrolled in any courses");
+    expect(text).toContain("REK178 Test 1");
+    expect(text).toContain("🔴 Overdue");
+    expect(text).toContain("_EMSLearn_");
+    // Financial Accounting 178's course/assignment ids belong to EMSLearn, not the anchor — must be sealed.
+    expect(text).toMatch(/assignment ID: `r_/);
+    expect(text).toMatch(/course ID: `r_/);
   });
 });

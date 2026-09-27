@@ -1,7 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "./moodle-client.js";
 import type { CourseRefResolver } from "./course-ref-resolver.js";
-import { registerCourseTools, type MultiSiteCourseListing } from "./tools/courses.js";
+import type { MultiSiteContext } from "./multi-site-context.js";
+import { registerCourseTools } from "./tools/courses.js";
 import { registerFileTools } from "./tools/files.js";
 import { registerDownloadTool } from "./tools/download.js";
 import { registerAssignmentTools } from "./tools/assignments.js";
@@ -17,9 +18,9 @@ export function registerAllTools(
   server: McpServer,
   client: MoodleClient,
   courseRefResolver: CourseRefResolver,
-  multiSiteCourses?: MultiSiteCourseListing,
+  multiSite?: MultiSiteContext,
 ): void {
-  registerCourseTools(server, client, courseRefResolver, multiSiteCourses);
+  registerCourseTools(server, client, courseRefResolver, multiSite);
   registerFileTools(server, courseRefResolver);
   registerDownloadTool(server, client);
   registerAssignmentTools(server, courseRefResolver);
@@ -27,7 +28,7 @@ export function registerAllTools(
   registerCalendarTools(server, client, courseRefResolver);
   registerQuizTools(server, courseRefResolver);
   registerForumTools(server, courseRefResolver);
-  registerNotificationTools(server, client);
+  registerNotificationTools(server, client, multiSite);
   registerSiteInfoTool(server, client);
-  registerComposedTools(server, client, courseRefResolver);
+  registerComposedTools(server, client, courseRefResolver, multiSite);
 }

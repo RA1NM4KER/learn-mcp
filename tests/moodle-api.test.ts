@@ -9,6 +9,7 @@ import {
   MoodleNotificationsResponseSchema,
   MoodleQuizAttemptsResponseSchema,
   MoodleQuizzesResponseSchema,
+  eventCourseId,
 } from "../src/moodle-api.js";
 
 describe("Moodle course-content schema", () => {
@@ -85,6 +86,75 @@ describe("Moodle assignment schema", () => {
 
   it("rejects an assignment missing cmid", () => {
     expect(MoodleAssignmentSchema.safeParse({ id: 6326, name: "Practical 2" }).success).toBe(false);
+  });
+});
+
+describe("Moodle calendar event schema", () => {
+  // Trimmed but otherwise verbatim shape of a real
+  // core_calendar_get_action_events_by_timesort response (Moodle 4.5.8,
+  // captured live against a real STEMLearn assignment due 2026-10-01 23:59
+  // SAST). This wsfunction's events carry NO top-level `courseid` at all —
+  // only `course.id` — which is why every live moodle_get_calendar_events
+  // call failed with the generic "Moodle returned an unexpected response.".
+  const liveActionEvent = {
+    id: 39376,
+    name: "SS244 Practical 2 - Due 1/10 at 23h59 is due",
+    description: "",
+    descriptionformat: 1,
+    component: "mod_assign",
+    modulename: "assign",
+    instance: 132553,
+    eventtype: "due",
+    timestart: 1790891940,
+    timeduration: 0,
+    timesort: 1790891940,
+    overdue: false,
+    course: {
+      id: 2722,
+      fullname: "Systems And Signals  / Stelsels en seine - 244",
+      shortname: "2026-46779-244",
+    },
+  };
+
+  // A core_calendar_get_calendar_events entry, by contrast, genuinely has a
+  // top-level courseid (also captured live) — the schema must keep accepting that too.
+  const livePlainEvent = {
+    id: 61873,
+    name: "Lecture class attendance register",
+    description: "",
+    courseid: 2722,
+    modulename: "attendance",
+    instance: 4821,
+    eventtype: "attendance",
+    timestart: 1789974000,
+    timeduration: 4200,
+  };
+
+  it("accepts a real action-event response with no top-level courseid", () => {
+    const result = MoodleCalendarResponseSchema.safeParse({ events: [liveActionEvent] });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a real plain-calendar-event response with a top-level courseid", () => {
+    const result = MoodleCalendarResponseSchema.safeParse({ events: [livePlainEvent] });
+    expect(result.success).toBe(true);
+  });
+
+  it("eventCourseId falls back to course.id when courseid is absent", () => {
+    const parsed = MoodleCalendarResponseSchema.parse({ events: [liveActionEvent] });
+    expect(eventCourseId(parsed.events[0]!)).toBe(2722);
+  });
+
+  it("eventCourseId prefers the top-level courseid when both are present", () => {
+    const parsed = MoodleCalendarResponseSchema.parse({ events: [livePlainEvent] });
+    expect(eventCourseId(parsed.events[0]!)).toBe(2722);
+  });
+
+  it("still rejects an event missing both courseid and course.id", () => {
+    const parsed = MoodleCalendarResponseSchema.parse({
+      events: [{ id: 1, name: "Orphan event", timestart: 1 }],
+    });
+    expect(eventCourseId(parsed.events[0]!)).toBe(0);
   });
 });
 

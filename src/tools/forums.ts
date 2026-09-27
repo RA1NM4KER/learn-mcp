@@ -6,6 +6,7 @@ import { sanitizeAndTruncateHtml, truncateText } from "../text.js";
 import { loadForumDiscussions, loadForums } from "../moodle-loaders.js";
 import type { MoodleDiscussion, MoodleForum } from "../moodle-api.js";
 import { FORUM_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
+import { formatMoodleDateOnly } from "../format-date.js";
 
 // Moodle's `mod_forum_get_forum_discussions` wsfunction needs the forum
 // *instance* id (`forum.id`, the row in mdl_forum) — NOT the course-module
@@ -15,9 +16,7 @@ import { FORUM_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 // "Unable to find forum with id <cmid>"; the real forum.id works.
 // So forum listing must come from mod_forum_get_forums_by_courses, which is
 // the only function that returns the real forum id.
-function formatDate(ts: number): string {
-  return new Date(ts * 1000).toLocaleString("en-CA", { dateStyle: "medium" });
-}
+const formatDate = formatMoodleDateOnly;
 
 export async function listForumsRaw(client: MoodleClient, courseId: number): Promise<MoodleForum[]> {
   if (!client.supports("mod_forum_get_forums_by_courses")) return [];

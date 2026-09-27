@@ -145,12 +145,25 @@ export const MoodleDiscussionsResponseSchema = MoodleObject.extend({ discussions
 export type MoodleDiscussionsResponse = z.infer<typeof MoodleDiscussionsResponseSchema>;
 
 export const MoodleCalendarEventSchema = MoodleObject.extend({
-  id: z.number(), name: z.string(), courseid: z.number(), timestart: z.number(), timeduration: z.number().optional().default(0), eventtype: z.string().optional().default(""),
+  id: z.number(), name: z.string(),
+  // core_calendar_get_action_events_by_timesort events carry NO top-level
+  // courseid at all — only course.id — while core_calendar_get_calendar_events
+  // events have both. Confirmed against a real Moodle 4.5.8 response: a
+  // schema requiring courseid rejected every action-event outright, which is
+  // why moodle_get_calendar_events failed on every live call. Always read
+  // the course id via eventCourseId() below rather than event.courseid.
+  courseid: z.number().optional(),
+  timestart: z.number(), timeduration: z.number().optional().default(0), eventtype: z.string().optional().default(""),
   course: MoodleObject.extend({ id: z.number(), shortname: z.string().optional(), fullname: z.string().optional() }).optional(), description: z.string().optional(),
 });
 export type MoodleCalendarEvent = z.infer<typeof MoodleCalendarEventSchema>;
 export const MoodleCalendarResponseSchema = MoodleObject.extend({ events: z.array(MoodleCalendarEventSchema) });
 export type MoodleCalendarResponse = z.infer<typeof MoodleCalendarResponseSchema>;
+
+/** The course id an event belongs to — never read event.courseid directly; see the schema comment above. */
+export function eventCourseId(event: MoodleCalendarEvent): number {
+  return event.courseid ?? event.course?.id ?? 0;
+}
 
 export const MoodleNotificationSchema = MoodleObject.extend({ subject: z.string(), text: z.string(), timecreated: z.number(), read: z.boolean().optional().default(false) });
 export const MoodleNotificationsResponseSchema = MoodleObject.extend({ notifications: z.array(MoodleNotificationSchema), unreadcount: z.number().optional().default(0) });

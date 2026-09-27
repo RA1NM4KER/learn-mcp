@@ -133,6 +133,59 @@ describe("getCalendarEvents", () => {
     expect(result).toContain("Target course event");
   });
 
+  it("renders a real action-event response instead of rejecting it (live Moodle 4.5.8 shape, no top-level courseid)", async () => {
+    // Regression for the reported bug: every live moodle_get_calendar_events
+    // call failed with "Moodle returned an unexpected response." because
+    // core_calendar_get_action_events_by_timesort events have no top-level
+    // courseid — only course.id (see moodle-api.test.ts and eventCourseId()).
+    const client = await makeClient();
+    mockFetch.mockImplementation(
+      routedFetchMock({
+        core_calendar_get_action_events_by_timesort: {
+          events: [{
+            id: 39376,
+            name: "SS244 Practical 2 - Due 1/10 at 23h59 is due",
+            description: "",
+            eventtype: "due",
+            timestart: 1790891940, // 2026-10-01 23:59 SAST
+            timeduration: 0,
+            course: { id: 2722, fullname: "Systems And Signals 244", shortname: "SS244" },
+          }],
+        },
+        core_enrol_get_users_courses: [COURSE],
+        core_calendar_get_calendar_events: { events: [] },
+      }),
+    );
+
+    const result = await getCalendarEvents(client, undefined, 14);
+
+    expect(result).toContain("SS244 Practical 2 - Due 1/10 at 23h59 is due");
+    expect(result).toContain("Systems And Signals 244");
+    // Timezone regression: rendered in Africa/Johannesburg, not the process's own (UTC on the Worker runtime).
+    expect(result).toContain("11:59 p.m.");
+    expect(result).not.toContain("9:59 p.m.");
+  });
+
+  it("filters an action-event (no top-level courseid) by course correctly via eventCourseId", async () => {
+    const client = await makeClient();
+    mockFetch.mockImplementation(
+      routedFetchMock({
+        core_calendar_get_action_events_by_timesort: {
+          events: [
+            { id: 1, name: "Target course event", eventtype: "due", timestart: 1, timeduration: 0, course: { id: COURSE.id } },
+            { id: 2, name: "Other course event", eventtype: "due", timestart: 1, timeduration: 0, course: { id: 99999 } },
+          ],
+        },
+        core_enrol_get_users_courses: [COURSE],
+        core_calendar_get_calendar_events: { events: [] },
+      }),
+    );
+
+    const result = await getCalendarEvents(client, COURSE.id, 14);
+    expect(result).toContain("Target course event");
+    expect(result).not.toContain("Other course event");
+  });
+
   it("bounds and sanitizes oversized calendar descriptions", async () => {
     const client = await makeClient();
     mockFetch.mockImplementation(routedFetchMock({

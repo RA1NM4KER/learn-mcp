@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { MoodleClient } from "../src/moodle-client.js";
-import { getCourse, getCourseNotices, hasConflictingNoticeDates, listCourses, type MultiSiteCourseListing } from "../src/tools/courses.js";
+import { getCourse, getCourseNotices, hasConflictingNoticeDates, listCourses } from "../src/tools/courses.js";
 import { TEXT_OUTPUT_POLICY } from "../src/policy.js";
 import { getSiteById } from "../src/sunlearn-sites.js";
+import type { MultiSiteContext } from "../src/multi-site-context.js";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -170,14 +171,14 @@ describe("listCourses", () => {
     };
   }
 
-  function multiSite(additionalSiteIds: string[], sealed: Record<string, string> = {}): MultiSiteCourseListing {
+  function multiSite(additionalSiteIds: string[], sealed: Record<string, string> = {}): MultiSiteContext {
     return {
-      anchorSiteName: "STEMLearn",
+      anchorSite: { id: "stemlearn", name: "STEMLearn" },
       additionalSites: additionalSiteIds.map((id) => ({
         site: getSiteById(id)!,
         config: { baseUrl: getSiteById(id)!.baseUrl, maxFileBytes: 1024, requestTimeoutMs: 5000, auth: { kind: "token", token: `${id}-token` } },
       })),
-      sealCourseId: async (siteId, courseId) => sealed[`${siteId}:${courseId}`] ?? `sealed-${siteId}-${courseId}`,
+      seal: async (_kind, siteId, courseId) => sealed[`${siteId}:${courseId}`] ?? `sealed-${siteId}-${courseId}`,
     };
   }
 
@@ -214,7 +215,10 @@ describe("listCourses", () => {
     expect(result).toContain("_Temporarily unavailable: EMSLearn._");
   });
 
-  it("notes that non-anchor course IDs only work with this listing tool", async () => {
+  it("tells the student every ID shown works directly with every other tool (no longer the stale 'only works with this listing' message)", async () => {
+    // Regression: sealed non-anchor refs already work in grades, assignments,
+    // course_overview, etc. (see multi-site-course-ref.integration.test.ts) —
+    // the old footer claiming otherwise was stale and actively misleading.
     const client = await makeClient();
     mockFetch.mockImplementation(
       routedFetch({
@@ -227,6 +231,7 @@ describe("listCourses", () => {
     );
 
     const result = await listCourses(client, multiSite(["emslearn"]));
-    expect(result).toContain("currently only work with this listing");
+    expect(result).not.toContain("currently only work with this listing");
+    expect(result).toContain("can be passed directly into any other tool");
   });
 });

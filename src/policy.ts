@@ -17,6 +17,7 @@ export const COMPOSED_TASK_POLICY = {
   maxRendered: 100,
   submissionStatusConcurrency: 4,
 } as const;
+export const MULTI_SITE_POLICY = { fanOutConcurrency: 4 } as const;
 
 /** Per-field and embedded-content limits for MCP-safe text rendering. */
 export const TEXT_OUTPUT_POLICY = {

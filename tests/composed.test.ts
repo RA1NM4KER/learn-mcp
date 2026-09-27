@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { MoodleClient, MoodleValidationError } from "../src/moodle-client.js";
+import { MoodleClient } from "../src/moodle-client.js";
 import { courseOverview, upcomingAndOverdue } from "../src/tools/composed.js";
 import { COMPOSED_TASK_POLICY } from "../src/policy.js";
+import type { SubRefSealer } from "../src/tools/tool-ref-helpers.js";
+
+/** Anchor-site passthrough — every test here has exactly one (anchor) site, so a seal is always a no-op. */
+const ANCHOR_SEALER: SubRefSealer = { siteId: "anchor", seal: async (_kind, id) => id };
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -88,7 +92,7 @@ describe("courseOverview", () => {
       }),
     );
 
-    const text = await courseOverview(client, 2722);
+    const text = await courseOverview(client, 2722, ANCHOR_SEALER);
 
     expect(text).toContain("Intro to Widgets");
     expect(text).toContain("Practical 2");
@@ -104,7 +108,7 @@ describe("courseOverview", () => {
   it("reports course not found without throwing when courseId isn't in the student's enrolled courses", async () => {
     const client = await makeClient();
     mockFetch.mockImplementation(routedFetchMock({ core_enrol_get_users_courses: [COURSE] }));
-    const text = await courseOverview(client, 9999);
+    const text = await courseOverview(client, 9999, ANCHOR_SEALER);
     expect(text).toContain("not found");
   });
 });
@@ -132,7 +136,9 @@ describe("upcomingAndOverdue", () => {
             },
           ],
         },
-        mod_assign_get_submission_status: { lastattempt: { submission: { status: "submitted" }, gradingstatus: "graded" } },
+        // Not submitted: these must stay genuinely "overdue" for this ordering test.
+        // Submission status folding into the final state is covered separately below.
+        mod_assign_get_submission_status: { lastattempt: { submission: { status: "not submitted" } } },
       }),
     );
 
@@ -149,11 +155,62 @@ describe("upcomingAndOverdue", () => {
     expect(veryIdx).toBeLessThan(slightIdx); // most overdue listed first
 
     expect(text).toContain("Far future");
-    expect(text).toContain("submitted");
-    expect(text).toContain("graded");
+    expect(text).toContain("not submitted");
   });
 
-  it("uses the shared assignment loader and safely rejects malformed assignment responses", async () => {
+  it("never labels a successfully submitted past-due assignment as overdue or missed", async () => {
+    // Regression: taskState() used to classify purely from due/cutoff dates,
+    // before submission status was known, so an assignment submitted on time
+    // whose deadline has since passed still rendered under "🔴 Overdue" (with
+    // "submitted" tacked on beside it) — contradicting what "overdue" means
+    // for a tool literally named upcoming_and_overdue.
+    const client = await makeClient();
+    const now = Math.floor(Date.now() / 1000);
+
+    mockFetch.mockImplementation((_url: string, init: RequestInit) => {
+      const body = init.body as URLSearchParams;
+      const fn = body.get("wsfunction")!;
+      if (fn === "core_enrol_get_users_courses") return jsonResponse([COURSE]);
+      if (fn === "mod_assign_get_assignments") {
+        return jsonResponse({
+          courses: [{
+            id: 2722,
+            assignments: [
+              { id: 1, cmid: 1, name: "Submitted on time", duedate: now - 86400, cutoffdate: 0, grade: 100 },
+              { id: 2, cmid: 2, name: "Submitted after cutoff passed", duedate: now - 20 * 86400, cutoffdate: now - 19 * 86400, grade: 100 },
+              { id: 3, cmid: 3, name: "Still outstanding", duedate: now - 86400, cutoffdate: 0, grade: 100 },
+            ],
+          }],
+        });
+      }
+      if (fn === "mod_assign_get_submission_status") {
+        const assignid = body.get("assignid");
+        if (assignid === "3") return jsonResponse({ lastattempt: { submission: { status: "not submitted" } } });
+        return jsonResponse({ lastattempt: { submission: { status: "submitted", timemodified: now - 90000 } }, gradingstatus: "graded" });
+      }
+      throw new Error(`Unexpected wsfunction in test: ${fn}`);
+    });
+
+    const text = await upcomingAndOverdue(client);
+
+    expect(text).toContain("### 🔴 Overdue");
+    const overdueSection = text.split("### 🔴 Overdue")[1]!.split("###")[0]!;
+    expect(overdueSection).toContain("Still outstanding");
+    expect(overdueSection).not.toContain("Submitted on time");
+    expect(overdueSection).not.toContain("Submitted after cutoff passed");
+
+    expect(text).toContain("### 🔵 Submitted");
+    const submittedSection = text.split("### 🔵 Submitted")[1]!;
+    expect(submittedSection).toContain("Submitted on time");
+    expect(submittedSection).toContain("Submitted after cutoff passed");
+    expect(text).not.toContain("### ⚫ Missed");
+  });
+
+  it("does not fail the whole aggregate when one site's assignment data is malformed — reports it unavailable instead", async () => {
+    // Regression: a single malformed record used to throw MoodleValidationError
+    // and crash the entire tool. Per the multi-site fault-tolerance requirement
+    // ("one unavailable Moodle site should not make the entire aggregate tool
+    // fail"), this must now degrade gracefully instead.
     const client = await makeClient();
     mockFetch.mockImplementation(routedFetchMock({
       core_enrol_get_users_courses: [COURSE],
@@ -162,10 +219,11 @@ describe("upcomingAndOverdue", () => {
       },
     }));
 
-    await expect(upcomingAndOverdue(client)).rejects.toBeInstanceOf(MoodleValidationError);
+    const text = await upcomingAndOverdue(client);
+    expect(text).toContain("Temporarily unavailable");
   });
 
-  it("moves assignments past their cutoffdate into Closed instead of Overdue", async () => {
+  it("moves assignments past their cutoffdate into Missed instead of Overdue", async () => {
     const client = await makeClient();
     const now = Math.floor(Date.now() / 1000);
 
@@ -211,7 +269,7 @@ describe("upcomingAndOverdue", () => {
     const overdueSection = text.split("### ⚫")[0];
     expect(overdueSection).not.toContain("Ancient prac");
     expect(overdueSection).toContain("Still submittable");
-    expect(text).toContain("⚫ Closed");
+    expect(text).toContain("⚫ Missed");
     expect(text).toContain("Ancient prac");
   });
 
