@@ -15,6 +15,7 @@ import { describeConsent } from "./describe-consent.js";
 import { renderSunlearnConnectPage, type ConnectSiteStatus, type SitePanel } from "../linking/sunlearn-connect-page.js";
 import { renderConsentPage } from "./consent-page.js";
 import { buildMobileLaunchUrl, getSiteById, listEnabledSites } from "../sunlearn-sites.js";
+import { CLIENT_METADATA_UNAVAILABLE, isCimdFetchError } from "./authorize-errors.js";
 
 // GET /authorize, POST /authorize/link, POST /authorize/continue,
 // POST /authorize/consent — the OAuth authentication+consent flow.
@@ -95,6 +96,11 @@ export async function handleAuthorize(request: Request, env: Env): Promise<Respo
     authRequest = await oauth.parseAuthRequest(request);
   } catch (err) {
     if (err instanceof AuthorizationError) return renderAuthorizationError(err);
+    // A URL-form client_id (such as ChatGPT's) requires the provider to
+    // retrieve its Client ID Metadata Document. That retrieval can fail
+    // independently of the student's request; render a safe local error
+    // rather than letting the exception escape as Cloudflare Error 1101.
+    if (isCimdFetchError(err)) return plainTextResponse(400, CLIENT_METADATA_UNAVAILABLE);
     throw err;
   }
 
