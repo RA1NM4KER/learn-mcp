@@ -4,12 +4,11 @@ import { handleMcpRequest } from "../mcp-handler.js";
 import { handleLegacyRoute, constantTimeEqual, jsonResponse } from "../legacy-routes.js";
 import { handleAuthorize, handleAuthorizeLink, handleAuthorizeContinue, handleAuthorizeDisconnect, handleConsentSubmit } from "./routes.js";
 import { DEFAULT_USER_ID } from "../linking/resolve-config.js";
+import { issuerForRequest } from "./issuer.js";
 
-// This deployment's exact resource identity — both the AS and the sole RS.
-// Keep in sync with the actual deployed workers.dev URL. Production never
-// sets OAUTH_ISSUER_URL_OVERRIDE, so this is the value actually used there —
-// identical to before this was made overridable.
-const DEFAULT_ISSUER_URL = "https://stemlearn-mcp.kefasa112.workers.dev";
+// This Worker serves both its canonical custom-domain issuer and its legacy
+// workers.dev issuer during migration; issuerForRequest selects one per
+// request. See oauth/issuer.ts.
 
 async function defaultHandlerFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -76,26 +75,22 @@ function buildOAuthProvider(issuerUrl: string): OAuthProvider<Env> {
 }
 
 // Constructed lazily, on first request, rather than at module scope: Workers
-// only exposes per-environment bindings/vars (env.OAUTH_ISSUER_URL_OVERRIDE)
-// inside a request handler, never at module top-level. Production never sets
-// that override, so it always resolves to DEFAULT_ISSUER_URL there — the
-// exact same value this used to be hardcoded to. Only a local `wrangler dev`
-// with OAUTH_ISSUER_URL_OVERRIDE set in .dev.vars (e.g. to
-// http://localhost:8787) ever gets a different value, which is what lets a
-// token minted and validated entirely on localhost carry a self-consistent
-// resource audience instead of one pointing at production.
-let cached: { issuerUrl: string; provider: OAuthProvider<Env> } | undefined;
+// only exposes per-environment bindings/vars inside a request handler. One
+// provider is retained for each accepted issuer so old workers.dev grants and
+// new custom-domain grants keep their own resource audiences.
+const providers = new Map<string, OAuthProvider<Env>>();
 
-function getOAuthProvider(env: Env): OAuthProvider<Env> {
-  const issuerUrl = env.OAUTH_ISSUER_URL_OVERRIDE || DEFAULT_ISSUER_URL;
-  if (!cached || cached.issuerUrl !== issuerUrl) {
-    cached = { issuerUrl, provider: buildOAuthProvider(issuerUrl) };
+function getOAuthProvider(issuerUrl: string): OAuthProvider<Env> {
+  let provider = providers.get(issuerUrl);
+  if (!provider) {
+    provider = buildOAuthProvider(issuerUrl);
+    providers.set(issuerUrl, provider);
   }
-  return cached.provider;
+  return provider;
 }
 
 export const oauthProvider = {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    return getOAuthProvider(env).fetch(request, env, ctx);
+    return getOAuthProvider(issuerForRequest(request.url, env.OAUTH_ISSUER_URL_OVERRIDE)).fetch(request, env, ctx);
   },
 };

@@ -6,6 +6,12 @@ compatibility_date = "2025-11-01"
 # support for SSRF-safe outbound fetches of client metadata documents.
 compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 
+# Canonical public endpoint. The legacy workers.dev endpoint stays enabled
+# during the OAuth migration so existing connected clients keep working.
+[[routes]]
+pattern = "stemlearn-mcp.kefas.co.za"
+custom_domain = true
+
 # Remote MCP transport (Streamable HTTP at /mcp), now OAuth 2.1-protected
 # (src/oauth/provider.ts) with a legacy MCP_ACCESS_TOKEN static-bearer lane
 # preserved during migration. Local stdio remains the primary supported
