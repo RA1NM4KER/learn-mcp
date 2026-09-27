@@ -12,6 +12,9 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 pattern = "stemlearn-mcp.kefas.co.za"
 custom_domain = true
 
+# Keep the existing endpoint live while clients migrate to the custom domain.
+workers_dev = true
+
 # Remote MCP transport (Streamable HTTP at /mcp), now OAuth 2.1-protected
 # (src/oauth/provider.ts) with a legacy MCP_ACCESS_TOKEN static-bearer lane
 # preserved during migration. Local stdio remains the primary supported
