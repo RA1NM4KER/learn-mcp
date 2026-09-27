@@ -9,9 +9,14 @@ export interface D1RunResult {
   meta: { changes: number };
 }
 
+export interface D1AllResult<T> {
+  results: T[];
+}
+
 export interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
   first<T = unknown>(): Promise<T | null>;
+  all<T = unknown>(): Promise<D1AllResult<T>>;
   run(): Promise<D1RunResult>;
 }
 

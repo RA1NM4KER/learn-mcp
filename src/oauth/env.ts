@@ -14,14 +14,22 @@ export interface Env {
   DB: D1Database;
   CREDENTIAL_ENCRYPTION_KEY?: string;
   OAUTH_KV: KVNamespace;
+  /**
+   * Dev-only override for oauth/provider.ts's issuer/resource identity (e.g.
+   * http://localhost:8787 under `wrangler dev`), so a token minted and
+   * validated locally carries a self-consistent audience instead of one
+   * pointing at the production hostname. Must never be set in production
+   * secrets — leaving it unset there preserves today's hardcoded value.
+   */
+  OAUTH_ISSUER_URL_OVERRIDE?: string;
 }
 
 /**
  * `ctx.props` for an authenticated /mcp request, set by resolveExternalToken
  * (legacy lane, `legacy: true`) or by the props stored at completeAuthorization
  * (OAuth lane, `legacy` absent). `userId` is DEFAULT_USER_ID for the legacy
- * lane or a derived `stemlearn:<origin>:<moodleUserId>` id for the OAuth
- * lane — these are disjoint namespaces by construction (see
+ * lane or a derived `stemlearn-<hash>` id (hash of origin+moodleUserId) for
+ * the OAuth lane — these are disjoint namespaces by construction (see
  * src/linking/resolve-config.ts, src/oauth/identity.ts).
  */
 export interface McpProps {

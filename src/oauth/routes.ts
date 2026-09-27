@@ -1,29 +1,45 @@
 import { AuthorizationError, type AuthRequest } from "@cloudflare/workers-oauth-provider";
 import { oauthHelpers, type Env } from "./env.js";
-import { assertAllowedMoodleBaseUrl } from "../linking/moodle-host-allowlist.js";
 import {
   createLinkingSession,
   finalizeLinkingSession,
   loadActiveLinkingSession,
   loadLinkingSessionUserId,
+  setLinkingSessionUserId,
 } from "../linking/session-store.js";
-import { verifyConnectionLink, LINK_EXPIRED, SOMETHING_WENT_WRONG } from "../linking/routes.js";
-import { saveCredential } from "../linking/credential-store.js";
+import { verifyConnectionLink, LINK_EXPIRED, SOMETHING_WENT_WRONG, UNKNOWN_SITE } from "../linking/routes.js";
+import { D1CredentialResolver, deleteCredential, saveCredential } from "../linking/credential-store.js";
 import { importCredentialKey } from "../linking/credential-crypto.js";
-import { deriveStemlearnUserId } from "./identity.js";
+import { resolveCanonicalUserId } from "./canonical-identity.js";
 import { describeConsent } from "./describe-consent.js";
-import { renderAuthorizePage } from "./authorize-page.js";
+import { renderSunlearnConnectPage, type ConnectSiteStatus, type SitePanel } from "../linking/sunlearn-connect-page.js";
 import { renderConsentPage } from "./consent-page.js";
+import { buildMobileLaunchUrl, getSiteById, listEnabledSites } from "../sunlearn-sites.js";
 
-// GET /authorize, POST /authorize/link, POST /authorize/consent — the OAuth
-// authentication+consent flow. STEMLearn linking (the long external detour
-// through Microsoft/SU login) IS how a student authenticates here; consent
-// is a short same-session round trip handled by the library's own
+// GET /authorize, POST /authorize/link, POST /authorize/continue,
+// POST /authorize/consent — the OAuth authentication+consent flow.
+// Connecting one or more SUNLearn sites (the long external detour through
+// Microsoft/SU login) IS how a student authenticates here; consent is a
+// short same-session round trip handled by the library's own
 // beginConsent/approveConsent/denyConsent afterward.
+//
+// A single pending session (src/linking/session-store.ts) carries the
+// validated AuthRequest across the whole flow. Every not-yet-connected
+// site's step dialog is precomputed up front from that one session's
+// passport (see panelsForSession) and rendered closed — there is no
+// separate "choose a site" server round trip; a student opens whichever
+// site's dialog they want with a pure client-side showModal() click. The
+// FIRST site a student successfully links establishes their permanent
+// identity (the "anchor" — see resolve-config.ts's resolveAnchor); every
+// additional site linked in the same flow is just another credential row
+// saved under that same identity. The session is only actually consumed
+// (single-use) at POST /authorize/continue, not at each individual site
+// link — that's what lets a student link several sites before proceeding to
+// consent.
 
-// Never a real derivable identity — real ones are always "stemlearn:...".
-// Only a placeholder for the row's user_id column until linking succeeds and
-// finalizeLinkingSession() writes the real derived id in the same atomic step.
+// Never a real derivable identity — real ones are always "stemlearn-<hash>".
+// Only a placeholder for the row's user_id column until the first site link
+// succeeds and setLinkingSessionUserId writes the real derived id.
 const OAUTH_SESSION_PLACEHOLDER_USER = "oauth-pending";
 
 function htmlResponse(status: number, body: string): Response {
@@ -50,12 +66,26 @@ function renderAuthorizationError(error: AuthorizationError): Response {
   return plainTextResponse(400, error.description);
 }
 
-function buildLaunchUrl(trustedBaseUrl: string, passport: string): string {
-  const url = new URL("/admin/tool/mobile/launch.php", trustedBaseUrl);
-  url.searchParams.set("service", "moodle_mobile_app");
-  url.searchParams.set("passport", passport);
-  url.searchParams.set("confirmed", "1");
-  return url.toString();
+async function connectedSiteIds(env: Env, userId: string): Promise<Set<string>> {
+  if (userId === OAUTH_SESSION_PLACEHOLDER_USER) return new Set();
+  const resolver = new D1CredentialResolver(env.DB, () => importCredentialKey(env.CREDENTIAL_ENCRYPTION_KEY));
+  const baseUrls = new Set((await resolver.resolveAll(userId)).map((c) => c.baseUrl));
+  return new Set(listEnabledSites().filter((s) => baseUrls.has(s.baseUrl)).map((s) => s.id));
+}
+
+async function siteStatuses(env: Env, userId: string): Promise<ConnectSiteStatus[]> {
+  const connected = await connectedSiteIds(env, userId);
+  return listEnabledSites().map((s) => ({ id: s.id, name: s.name, connected: connected.has(s.id) }));
+}
+
+/** One precomputed, closed-by-default dialog per not-yet-connected site, all sharing this session's one passport. */
+function panelsForSession(sites: ConnectSiteStatus[], passport: string): SitePanel[] {
+  return sites
+    .filter((s) => !s.connected)
+    .map((s) => {
+      const site = getSiteById(s.id)!;
+      return { siteId: site.id, siteName: site.name, launchUrl: buildMobileLaunchUrl(site, passport), formAction: "/authorize/link" };
+    });
 }
 
 export async function handleAuthorize(request: Request, env: Env): Promise<Response> {
@@ -68,47 +98,108 @@ export async function handleAuthorize(request: Request, env: Env): Promise<Respo
     throw err;
   }
 
-  let trustedBaseUrl: string;
-  try {
-    trustedBaseUrl = assertAllowedMoodleBaseUrl(env.MOODLE_URL ?? "");
-  } catch {
-    return plainTextResponse(500, "This server is misconfigured.");
-  }
-
-  const session = await createLinkingSession(env.DB, OAUTH_SESSION_PLACEHOLDER_USER, JSON.stringify(authRequest));
-  return htmlResponse(200, renderAuthorizePage(buildLaunchUrl(trustedBaseUrl, session.passport), session.sessionId));
+  const session = await createLinkingSession(env.DB, OAUTH_SESSION_PLACEHOLDER_USER, null, JSON.stringify(authRequest));
+  const sites = await siteStatuses(env, OAUTH_SESSION_PLACEHOLDER_USER);
+  const panels = panelsForSession(sites, session.passport);
+  return htmlResponse(200, renderSunlearnConnectPage({ sites, sessionId: session.sessionId, panels }));
 }
 
+async function renderConnectPageForSession(
+  env: Env,
+  userId: string,
+  sessionId: string,
+  passport: string,
+  errorMessage?: string,
+  autoOpenSiteId?: string,
+): Promise<Response> {
+  const sites = await siteStatuses(env, userId);
+  const panels = panelsForSession(sites, passport);
+  const canManage = userId !== OAUTH_SESSION_PLACEHOLDER_USER;
+  return htmlResponse(
+    errorMessage ? 400 : 200,
+    renderSunlearnConnectPage({
+      sites,
+      sessionId,
+      panels,
+      ...(autoOpenSiteId ? { autoOpenSiteId } : {}),
+      ...(errorMessage ? { errorMessage } : {}),
+      ...(canManage ? { continueAction: { formAction: "/authorize/continue", sessionId } } : {}),
+      // Disconnecting only makes sense once we actually know who "you" are —
+      // before that (still the placeholder identity), there's nothing to
+      // disconnect anything from yet.
+      ...(canManage ? { disconnectFormAction: "/authorize/disconnect" } : {}),
+    }),
+  );
+}
+
+/** POST /authorize/disconnect — remove one connected site's credential, once a real identity is known this flow. */
+export async function handleAuthorizeDisconnect(request: Request, env: Env): Promise<Response> {
+  const form = await request.formData().catch(() => null);
+  const sessionId = form ? String(form.get("sessionId") ?? "") : "";
+  const siteId = form ? String(form.get("siteId") ?? "") : "";
+  if (!sessionId) return plainTextResponse(400, "Invalid request.");
+
+  const session = await loadActiveLinkingSession(env.DB, sessionId);
+  if (!session || !session.oauthRequestJson) return plainTextResponse(400, LINK_EXPIRED);
+  if (session.userId === OAUTH_SESSION_PLACEHOLDER_USER) {
+    return await renderConnectPageForSession(
+      env,
+      session.userId,
+      sessionId,
+      session.passport,
+      "Connect at least one SUNLearn environment first.",
+    );
+  }
+
+  const site = getSiteById(siteId);
+  if (!site) return await renderConnectPageForSession(env, session.userId, sessionId, session.passport, UNKNOWN_SITE);
+
+  await deleteCredential(env.DB, session.userId, site.baseUrl);
+  return await renderConnectPageForSession(env, session.userId, sessionId, session.passport);
+}
+
+/** POST /authorize/link — the pasted connection link, tagged with which site's panel it came from. */
 export async function handleAuthorizeLink(request: Request, env: Env): Promise<Response> {
   const form = await request.formData().catch(() => null);
   const sessionId = form ? String(form.get("sessionId") ?? "") : "";
+  const siteId = form ? String(form.get("siteId") ?? "") : "";
   const connectionLink = form ? String(form.get("connectionLink") ?? "") : "";
   if (!sessionId) return plainTextResponse(400, "Invalid request.");
 
   const session = await loadActiveLinkingSession(env.DB, sessionId);
   if (!session || !session.oauthRequestJson) return plainTextResponse(400, LINK_EXPIRED);
 
-  let trustedBaseUrl: string;
-  try {
-    trustedBaseUrl = assertAllowedMoodleBaseUrl(env.MOODLE_URL ?? "");
-  } catch {
-    return plainTextResponse(500, SOMETHING_WENT_WRONG);
+  const site = getSiteById(siteId);
+  if (!site || !site.enabled) {
+    return await renderConnectPageForSession(env, session.userId, sessionId, session.passport, UNKNOWN_SITE);
   }
+  const trustedBaseUrl = site.baseUrl;
 
   const verified = await verifyConnectionLink(session.passport, connectionLink, trustedBaseUrl);
   if (!verified.ok) {
     // Session survives a bad attempt (see verifyConnectionLink) — re-render
-    // the same linking page, same session, so the student can retry the
-    // paste without redoing university login.
-    const retryUrl = buildLaunchUrl(trustedBaseUrl, session.passport);
-    return htmlResponse(verified.status, renderAuthorizePage(retryUrl, sessionId, verified.message));
+    // with only this one site's dialog reopened, same session, so the
+    // student can retry the paste without redoing university login.
+    return await renderConnectPageForSession(env, session.userId, sessionId, session.passport, verified.message, site.id);
   }
 
-  const userId = await deriveStemlearnUserId(new URL(trustedBaseUrl).host, verified.moodleUserId);
+  const priorCanonicalUserId = session.userId === OAUTH_SESSION_PLACEHOLDER_USER ? null : session.userId;
+  const resolution = await resolveCanonicalUserId(env.DB, trustedBaseUrl, verified.moodleUserId, priorCanonicalUserId);
+  if (!resolution.ok) {
+    return await renderConnectPageForSession(
+      env,
+      session.userId,
+      sessionId,
+      session.passport,
+      "This SUNLearn account is already connected to a different session. Please start again.",
+    );
+  }
+  const userId = resolution.canonicalUserId;
 
-  // Only the request that wins this atomic consume may proceed to consent.
-  const won = await finalizeLinkingSession(env.DB, sessionId, userId);
-  if (!won) return plainTextResponse(400, LINK_EXPIRED);
+  if (priorCanonicalUserId === null) {
+    const bound = await setLinkingSessionUserId(env.DB, sessionId, userId);
+    if (!bound) return plainTextResponse(400, LINK_EXPIRED);
+  }
 
   try {
     const key = await importCredentialKey(env.CREDENTIAL_ENCRYPTION_KEY);
@@ -116,6 +207,31 @@ export async function handleAuthorizeLink(request: Request, env: Env): Promise<R
   } catch {
     return plainTextResponse(500, SOMETHING_WENT_WRONG);
   }
+
+  return await renderConnectPageForSession(env, userId, sessionId, session.passport);
+}
+
+/** POST /authorize/continue — proceed from linking to consent, once at least one site is connected. */
+export async function handleAuthorizeContinue(request: Request, env: Env): Promise<Response> {
+  const form = await request.formData().catch(() => null);
+  const sessionId = form ? String(form.get("sessionId") ?? "") : "";
+  if (!sessionId) return plainTextResponse(400, "Invalid request.");
+
+  const session = await loadActiveLinkingSession(env.DB, sessionId);
+  if (!session || !session.oauthRequestJson) return plainTextResponse(400, LINK_EXPIRED);
+  if (session.userId === OAUTH_SESSION_PLACEHOLDER_USER) {
+    return await renderConnectPageForSession(
+      env,
+      session.userId,
+      sessionId,
+      session.passport,
+      "Connect at least one SUNLearn environment first.",
+    );
+  }
+
+  // Only the request that wins this atomic consume may proceed to consent.
+  const won = await finalizeLinkingSession(env.DB, sessionId, session.userId);
+  if (!won) return plainTextResponse(400, LINK_EXPIRED);
 
   const authRequest = JSON.parse(session.oauthRequestJson) as AuthRequest;
   const oauth = oauthHelpers(env);

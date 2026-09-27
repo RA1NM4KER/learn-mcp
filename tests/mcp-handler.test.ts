@@ -165,6 +165,47 @@ describe("handleMcpRequest", () => {
     expect(String(requestInitA.body)).not.toContain("user-b-token");
   });
 
+  it("OAuth lane: moodle_list_courses aggregates across every site the user has connected", async () => {
+    const env = makeEnv();
+    const userId = await deriveStemlearnUserId("stemlearn.sun.ac.za", 7);
+    const key = await importCredentialKey(env.CREDENTIAL_ENCRYPTION_KEY);
+    await saveCredential(env.DB, key, userId, BASE_URL, "stem-token");
+    await saveCredential(env.DB, key, userId, "https://emslearn.sun.ac.za", "ems-token");
+
+    mockFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const host = new URL(url).host;
+      const bodyStr = init?.body ? String(init.body) : "";
+      if (bodyStr.includes("wsfunction=core_webservice_get_site_info")) {
+        return mockOkJson({ ...SITE_INFO, sitename: host });
+      }
+      if (bodyStr.includes("wsfunction=core_enrol_get_users_courses")) {
+        return mockOkJson(
+          host === "stemlearn.sun.ac.za"
+            ? [{ id: 1, fullname: "Geology 101", shortname: "GEO101" }]
+            : [{ id: 1, fullname: "Accounting 101", shortname: "ACC101" }],
+        );
+      }
+      throw new Error(`unexpected request in test: ${bodyStr}`);
+    });
+
+    const response = await handleMcpRequest(
+      new Request("https://worker.test/mcp", {
+        method: "POST",
+        headers: ACCEPT_HEADERS,
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "moodle_list_courses", arguments: {} } }),
+      }),
+      env,
+      fakeCtx({ userId }),
+    );
+    expect(response.status).toBe(200);
+    const result = (await response.json()) as { result: { content: { type: string; text: string }[] } };
+    const text = result.result.content[0]!.text;
+    expect(text).toContain("Geology 101");
+    expect(text).toContain("Accounting 101");
+    expect(text).toMatch(/ID: `1`/); // anchor site keeps its plain numeric id
+    expect(text).not.toContain("ID: `1`\nID: `1`"); // the two courses' ids must not render identically
+  });
+
   it("does not bypass file authorization for a bogus fileId over HTTP", async () => {
     mockFetch.mockResolvedValueOnce(mockOkJson(SITE_INFO));
     const env = makeEnv();

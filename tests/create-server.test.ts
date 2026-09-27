@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createStemLearnServer, STEMLEARN_SERVER_INFO } from "../src/create-server.js";
+import { createAnchorOnlyResolver } from "../src/course-ref-resolver.js";
 import type { MoodleClient } from "../src/moodle-client.js";
 
 type RegisteredSurface = {
@@ -10,7 +11,8 @@ type RegisteredSurface = {
 
 describe("shared MCP server factory", () => {
   it("builds the complete transport-independent STEMLearn surface", () => {
-    const server = createStemLearnServer({} as MoodleClient) as unknown as RegisteredSurface;
+    const client = {} as MoodleClient;
+    const server = createStemLearnServer(client, createAnchorOnlyResolver(client)) as unknown as RegisteredSurface;
 
     expect(STEMLEARN_SERVER_INFO).toEqual({ name: "stemlearn-mcp", version: "0.1.0" });
     expect(Object.keys(server._registeredTools)).toContain("moodle_list_courses");

@@ -10,12 +10,15 @@ export interface MoodleCredential {
 }
 
 /**
- * Resolves a linked Moodle credential for a user id. Returns null when no
- * credential has been linked yet (callers may fall back to another config
- * source). Throws when a credential row exists but fails integrity/decryption
- * checks — callers must NOT fall back to another source in that case, since
- * that could silently run requests as the wrong identity.
+ * Resolves a linked Moodle credential for a user id at one specific SUNLearn
+ * site. Returns null when no credential has been linked for that (user,
+ * site) pair yet (callers may fall back to another config source). Throws
+ * when a credential row exists but fails integrity/decryption checks —
+ * callers must NOT fall back to another source in that case, since that
+ * could silently run requests as the wrong identity.
  */
 export interface MoodleCredentialResolver {
-  resolve(userId: string): Promise<MoodleCredential | null>;
+  resolve(userId: string, siteBaseUrl: string): Promise<MoodleCredential | null>;
+  resolveAll(userId: string): Promise<Array<{ baseUrl: string; credential: MoodleCredential }>>;
+  resolveAnchor(userId: string): Promise<{ baseUrl: string; credential: MoodleCredential } | null>;
 }

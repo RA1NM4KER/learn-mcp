@@ -1,6 +1,7 @@
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
+import type { CourseRefResolver } from "../course-ref-resolver.js";
+import { RefSchema, withResolvedRef } from "./tool-ref-helpers.js";
 import { loadGrades } from "../moodle-loaders.js";
 import type { MoodleGradeItem } from "../moodle-api.js";
 import { GRADE_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
@@ -75,13 +76,11 @@ export async function getGrades(client: MoodleClient, courseId: number): Promise
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
-export function registerGradeTools(server: McpServer, client: MoodleClient): void {
+export function registerGradeTools(server: McpServer, courseRefResolver: CourseRefResolver): void {
   server.tool(
     "moodle_get_grades",
     "Get the student's own grades for a course — every graded item (assignments, tests, quizzes), category, percentage, and feedback comment, plus the course total. Answers 'what's my grade in this course' or 'how did I do on X'.",
-    { courseId: z.number().describe("Course ID from moodle_list_courses") },
-    async ({ courseId }) => ({
-      content: [{ type: "text" as const, text: await getGrades(client, courseId) }],
-    })
+    { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
+    async ({ courseId }) => withResolvedRef(courseRefResolver, "course", courseId, getGrades),
   );
 }

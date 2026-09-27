@@ -1,6 +1,7 @@
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
+import type { CourseRefResolver } from "../course-ref-resolver.js";
+import { RefSchema, withResolvedRef } from "./tool-ref-helpers.js";
 import { listForumsRaw, getDiscussionsRaw } from "./forums.js";
 import { getCourseNoticesRaw, hasConflictingNoticeDates } from "./courses.js";
 import { ASSIGNMENT_LIST_POLICY, COMPOSED_TASK_POLICY, TEXT_OUTPUT_POLICY, mapWithConcurrency } from "../policy.js";
@@ -258,14 +259,12 @@ export async function upcomingAndOverdue(client: MoodleClient): Promise<string> 
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
-export function registerComposedTools(server: McpServer, client: MoodleClient): void {
+export function registerComposedTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver): void {
   server.tool(
     "course_overview",
     "One-call summary of a course for the student: identity, upcoming deadlines, course grade total, and recent announcements. Use this instead of chaining moodle_get_course + moodle_list_assignments + moodle_get_grades + moodle_get_forum_discussions when the student just wants 'catch me up on this course'.",
-    { courseId: z.number().describe("Course ID from moodle_list_courses") },
-    async ({ courseId }) => ({
-      content: [{ type: "text" as const, text: await courseOverview(client, courseId) }],
-    }),
+    { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
+    async ({ courseId }) => withResolvedRef(courseRefResolver, "course", courseId, courseOverview),
   );
 
   server.tool(

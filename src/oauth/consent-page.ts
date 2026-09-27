@@ -1,4 +1,5 @@
 import type { ConsentDescription } from "./describe-consent.js";
+import { PAGE_SHELL_CSS, renderBrandHeader, renderLegalFooter } from "../page-shell.js";
 
 // Plain-language permission categories for scopes we currently grant. No raw
 // scope strings, no OAuth jargon, no tokens, no protocol internals — per the
@@ -12,6 +13,11 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
+// Deliberately says "SUNLearn", never a specific site name: by the time a
+// student reaches consent they may have linked any subset of the five
+// registry sites (src/sunlearn-sites.ts) to this one identity — this screen
+// grants access to the whole connected account, not just whichever site
+// happened to be linked first.
 export function renderConsentPage(details: ConsentDescription, handle: string, linkingSessionId: string): string {
   const name = escapeHtml(details.clientName);
   const origin = details.clientDomain
@@ -29,33 +35,40 @@ export function renderConsentPage(details: ConsentDescription, handle: string, l
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Connect STEMLearn</title>
+<meta name="color-scheme" content="light">
+<title>Connect SUNLearn — SUNLearn MCP</title>
 <style>
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 480px; margin: 60px auto; padding: 0 20px; line-height: 1.5; }
-  h1 { font-size: 1.3rem; }
-  ul { padding-left: 20px; }
-  .note { color: #666; font-size: 0.9rem; }
-  .warning { color: #b3261e; font-weight: 600; }
-  button { font-size: 1rem; padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; margin-right: 10px; }
-  button[name="decision"][value="approve"] { background: #6b2140; color: white; }
-  button[name="decision"][value="deny"] { background: transparent; color: #6b2140; border: 1px solid #6b2140; }
+${PAGE_SHELL_CSS}
+  .card { padding: 28px 30px; margin-bottom: 24px; }
+  ul { padding-left: 20px; margin: 10px 0; }
+  li { margin: 4px 0; }
+  .note { color: var(--muted-foreground); font-size: 0.85rem; }
+  .warning { color: #b91c1c; font-weight: 600; background: #fef2f2; border: 1px solid var(--destructive-border); border-radius: var(--radius); padding: 10px 14px; }
+  .consent-actions { margin-top: 18px; }
+  .consent-actions button { margin-right: 10px; padding: 0 18px; height: 36px; }
 </style>
 </head>
 <body>
-  <h1>Connect STEMLearn</h1>
-  <p><strong>${name}</strong> would like permission to access your STEMLearn information through this MCP.</p>
-  <p class="note">${origin} For V1 this server is read-only.</p>
-  <p>It would be able to:</p>
-  <ul>${permissionItems}</ul>
-  <p class="note">Access will be sent to <strong>${escapeHtml(details.redirectHost)}</strong>.</p>
-  ${details.redirectIsLoopback ? '<p class="warning">This sends access to an app on your computer. Continue only if you just started signing in from it.</p>' : ""}
-  <form method="post" action="/authorize/consent">
-    <input type="hidden" name="handle" value="${escapeHtml(handle)}">
-    <input type="hidden" name="sessionId" value="${escapeHtml(linkingSessionId)}">
-    ${scopeInputs}
-    <button name="decision" value="approve">Allow</button>
-    <button name="decision" value="deny">Cancel</button>
-  </form>
+  ${renderBrandHeader()}
+  <div class="page">
+  <div class="card">
+    <h1>Connect SUNLearn</h1>
+    <p><strong>${name}</strong> would like permission to access your SUNLearn information through this MCP.</p>
+    <p class="note">${origin} For V1 this server is read-only.</p>
+    <p>It would be able to:</p>
+    <ul>${permissionItems}</ul>
+    <p class="note">Access will be sent to <strong>${escapeHtml(details.redirectHost)}</strong>.</p>
+    ${details.redirectIsLoopback ? '<p class="warning">This sends access to an app on your computer. Continue only if you just started signing in from it.</p>' : ""}
+    <form method="post" action="/authorize/consent" class="consent-actions">
+      <input type="hidden" name="handle" value="${escapeHtml(handle)}">
+      <input type="hidden" name="sessionId" value="${escapeHtml(linkingSessionId)}">
+      ${scopeInputs}
+      <button type="submit" name="decision" value="approve">Allow</button>
+      <button type="submit" name="decision" value="deny" class="btn-outline">Cancel</button>
+    </form>
+  </div>
+  </div>
+  ${renderLegalFooter()}
 </body>
 </html>
 `;

@@ -2,7 +2,18 @@ import type { OAuthResourceContext } from "@cloudflare/workers-oauth-provider";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { MoodleClient, MoodleTimeoutError } from "./moodle-client.js";
 import { createStemLearnServer } from "./create-server.js";
-import { resolveMoodleConfig, resolveMoodleConfigForOAuthUser, AccountLinkRequiredError, DEFAULT_USER_ID } from "./linking/resolve-config.js";
+import type { MultiSiteCourseListing } from "./tools/courses.js";
+import { CourseRefResolver, createAnchorOnlyResolver } from "./course-ref-resolver.js";
+import { GlobalRefStore } from "./global-ref.js";
+import {
+  resolveMoodleConfig,
+  resolveMoodleConfigForOAuthUser,
+  resolveMoodleConfigForSite,
+  resolveAllMoodleConfigsForOAuthUser,
+  AccountLinkRequiredError,
+  DEFAULT_USER_ID,
+} from "./linking/resolve-config.js";
+import { getSiteByBaseUrl, getSiteById } from "./sunlearn-sites.js";
 import type { Env, McpProps } from "./oauth/env.js";
 
 // The actual MCP transport, wrapped by OAuthProvider as apiRoute "/mcp"
@@ -42,6 +53,44 @@ function jsonRpcParseErrorResponse(): Response {
   );
 }
 
+/**
+ * Builds this request's course/assignment/quiz/forum reference resolver
+ * (src/course-ref-resolver.ts) and the moodle_list_courses aggregation
+ * context, sharing one GlobalRefStore so every sealed id in a response uses
+ * the exact same envelope/key regardless of which tool minted it. Building a
+ * MoodleClient for a non-anchor site is always deferred to the resolver's
+ * own lazy cache — a request for an unrelated tool never pays the cost of
+ * contacting every connected SUNLearn instance.
+ */
+async function buildCourseContext(
+  userId: string,
+  anchorClient: MoodleClient,
+  anchorBaseUrl: string,
+  env: Env,
+): Promise<{ resolver: CourseRefResolver; multiSiteCourses?: MultiSiteCourseListing }> {
+  const anchorSite = getSiteByBaseUrl(anchorBaseUrl);
+  if (!anchorSite || !env.CREDENTIAL_ENCRYPTION_KEY) {
+    return { resolver: createAnchorOnlyResolver(anchorClient) };
+  }
+
+  const refStore = new GlobalRefStore(env.CREDENTIAL_ENCRYPTION_KEY);
+  const resolver = new CourseRefResolver(anchorSite.id, anchorClient, userId, refStore, (siteId) => {
+    const site = getSiteById(siteId);
+    return site ? resolveMoodleConfigForSite(userId, site, env) : Promise.resolve(null);
+  });
+
+  const allConfigs = await resolveAllMoodleConfigsForOAuthUser(userId, env);
+  const additionalSites = allConfigs.filter(({ site }) => site.baseUrl !== anchorSite.baseUrl);
+  if (additionalSites.length === 0) return { resolver };
+
+  const multiSiteCourses: MultiSiteCourseListing = {
+    additionalSites,
+    anchorSiteName: anchorSite.name,
+    sealCourseId: async (siteId, courseId) => String(await resolver.sealIfNeeded("course", siteId, courseId)),
+  };
+  return { resolver, multiSiteCourses };
+}
+
 export async function handleMcpRequest(
   request: Request,
   env: Env,
@@ -68,11 +117,13 @@ export async function handleMcpRequest(
     // token always resolves its derived userId with NO fallback — a missing
     // credential there must never silently run as DEFAULT_USER_ID or the env
     // secret.
+    const userId = ctx.props.legacy ? DEFAULT_USER_ID : ctx.props.userId;
     const config = ctx.props.legacy
-      ? await resolveMoodleConfig(DEFAULT_USER_ID, env)
-      : await resolveMoodleConfigForOAuthUser(ctx.props.userId, env);
+      ? await resolveMoodleConfig(userId, env)
+      : await resolveMoodleConfigForOAuthUser(userId, env);
     const client = await MoodleClient.create(config);
-    const server = createStemLearnServer(client);
+    const { resolver, multiSiteCourses } = await buildCourseContext(userId, client, config.baseUrl, env);
+    const server = createStemLearnServer(client, resolver, multiSiteCourses);
     // Stateless (no sessionIdGenerator) + JSON response mode: each request is
     // handled by a fresh transport/client, and the JSON-RPC response comes
     // back as a normal application/json body instead of an SSE stream — this

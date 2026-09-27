@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { MoodleClient } from "../src/moodle-client.js";
-import { getCourse, getCourseNotices, hasConflictingNoticeDates } from "../src/tools/courses.js";
+import { getCourse, getCourseNotices, hasConflictingNoticeDates, listCourses, type MultiSiteCourseListing } from "../src/tools/courses.js";
 import { TEXT_OUTPUT_POLICY } from "../src/policy.js";
+import { getSiteById } from "../src/sunlearn-sites.js";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -14,17 +15,17 @@ function jsonResponse(data: unknown) {
   });
 }
 
+const SITE_INFO_FIXTURE = {
+  userid: 1,
+  username: "student",
+  sitename: "STEMLearn",
+  fullname: "Test Student",
+  release: "4.5.8",
+  functions: [{ name: "core_course_get_contents", version: "1" }],
+};
+
 async function makeClient() {
-  mockFetch.mockResolvedValueOnce(
-    jsonResponse({
-      userid: 1,
-      username: "student",
-      sitename: "STEMLearn",
-      fullname: "Test Student",
-      release: "4.5.8",
-      functions: [{ name: "core_course_get_contents", version: "1" }],
-    }),
-  );
+  mockFetch.mockResolvedValueOnce(jsonResponse(SITE_INFO_FIXTURE));
   return MoodleClient.create({ baseUrl: "https://stemlearn.sun.ac.za", auth: { kind: "token", token: "tok" } });
 }
 
@@ -131,5 +132,101 @@ describe("getCourseNotices", () => {
       { sectionName: "Week 5", text: "The final deadline for Practical 1 is 27 August at 23:59." },
       { sectionName: "Week 8", text: "The deadline for Practical 2 is 1 October at 23:59." },
     ])).toBe(false);
+  });
+});
+
+describe("listCourses", () => {
+  it("renders exactly the single-site format when there is nothing else connected", async () => {
+    const client = await makeClient();
+    mockFetch.mockResolvedValueOnce(jsonResponse([{ id: 1, fullname: "Geology 101", shortname: "GEO101" }]));
+
+    const result = await listCourses(client);
+    expect(result).toContain("## Your Courses");
+    expect(result).toContain("**Geology 101** (GEO101) — ID: `1`");
+    expect(result).not.toContain("_STEMLearn_");
+  });
+
+  it("says so when the student has no courses and nothing else is connected", async () => {
+    const client = await makeClient();
+    mockFetch.mockResolvedValueOnce(jsonResponse([]));
+    expect(await listCourses(client)).toBe("You are not enrolled in any courses.");
+  });
+
+  function routedFetch(bySite: Record<string, { siteInfo?: unknown; courses?: unknown; fail?: "siteInfo" | "courses" }>) {
+    return async (url: string, init?: RequestInit) => {
+      const host = new URL(String(url)).host;
+      const entry = bySite[host];
+      if (!entry) throw new Error(`unexpected host in test: ${host}`);
+      const bodyStr = init?.body ? String(init.body) : "";
+      if (bodyStr.includes("wsfunction=core_webservice_get_site_info")) {
+        if (entry.fail === "siteInfo") throw new Error("simulated network failure");
+        return jsonResponse(entry.siteInfo);
+      }
+      if (bodyStr.includes("wsfunction=core_enrol_get_users_courses")) {
+        if (entry.fail === "courses") throw new Error("simulated network failure");
+        return jsonResponse(entry.courses);
+      }
+      throw new Error(`unexpected wsfunction in test body: ${bodyStr}`);
+    };
+  }
+
+  function multiSite(additionalSiteIds: string[], sealed: Record<string, string> = {}): MultiSiteCourseListing {
+    return {
+      anchorSiteName: "STEMLearn",
+      additionalSites: additionalSiteIds.map((id) => ({
+        site: getSiteById(id)!,
+        config: { baseUrl: getSiteById(id)!.baseUrl, maxFileBytes: 1024, requestTimeoutMs: 5000, auth: { kind: "token", token: `${id}-token` } },
+      })),
+      sealCourseId: async (siteId, courseId) => sealed[`${siteId}:${courseId}`] ?? `sealed-${siteId}-${courseId}`,
+    };
+  }
+
+  it("aggregates courses across the anchor and every additional connected site", async () => {
+    const client = await makeClient();
+    mockFetch.mockImplementation(
+      routedFetch({
+        "stemlearn.sun.ac.za": { courses: [{ id: 1, fullname: "Geology 101", shortname: "GEO101" }] },
+        "emslearn.sun.ac.za": {
+          siteInfo: { ...SITE_INFO_FIXTURE, sitename: "EMSLearn" },
+          courses: [{ id: 1, fullname: "Accounting 101", shortname: "ACC101" }],
+        },
+      }),
+    );
+
+    const result = await listCourses(client, multiSite(["emslearn"]));
+    expect(result).toContain("**Geology 101** (GEO101) — _STEMLearn_ — ID: `1`");
+    expect(result).toContain("**Accounting 101** (ACC101) — _EMSLearn_ — ID: `sealed-emslearn-1`");
+    // Same numeric Moodle courseId (1) on two different sites must render with distinct IDs.
+    expect(result.match(/ID: `1`/g)).toHaveLength(1);
+  });
+
+  it("reports an unavailable additional site without failing the whole response", async () => {
+    const client = await makeClient();
+    mockFetch.mockImplementation(
+      routedFetch({
+        "stemlearn.sun.ac.za": { courses: [{ id: 1, fullname: "Geology 101", shortname: "GEO101" }] },
+        "emslearn.sun.ac.za": { fail: "siteInfo" },
+      }),
+    );
+
+    const result = await listCourses(client, multiSite(["emslearn"]));
+    expect(result).toContain("Geology 101");
+    expect(result).toContain("_Temporarily unavailable: EMSLearn._");
+  });
+
+  it("notes that non-anchor course IDs only work with this listing tool", async () => {
+    const client = await makeClient();
+    mockFetch.mockImplementation(
+      routedFetch({
+        "stemlearn.sun.ac.za": { courses: [] },
+        "emslearn.sun.ac.za": {
+          siteInfo: { ...SITE_INFO_FIXTURE, sitename: "EMSLearn" },
+          courses: [{ id: 5, fullname: "Marketing 101", shortname: "MKT101" }],
+        },
+      }),
+    );
+
+    const result = await listCourses(client, multiSite(["emslearn"]));
+    expect(result).toContain("currently only work with this listing");
   });
 });

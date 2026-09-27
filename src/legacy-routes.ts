@@ -1,11 +1,17 @@
 import { handleLinkComplete, handleLinkDisconnect, handleLinkStart } from "./linking/routes.js";
 import { CONNECT_PAGE_HTML } from "./linking/connect-page.js";
+import { TERMS_HTML, PRIVACY_HTML } from "./legal-pages.js";
 import type { Env } from "./oauth/env.js";
 
-// Routes that predate OAuth and remain exactly as they were: /health,
-// /connect (legacy developer-key linking UI), and the bearer-gated legacy
-// /auth/stemlearn/* endpoints. These live in the OAuthProvider's
-// defaultHandler alongside the new OAuth routes (src/oauth/routes.ts).
+function htmlResponse(body: string): Response {
+  return new Response(body, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+
+// Routes that predate OAuth and remain: /health, /connect (legacy developer
+// bearer-key linking UI, now multi-site — see connect-page.ts), and the
+// bearer-gated legacy /auth/stemlearn/* endpoints. These live in the
+// OAuthProvider's defaultHandler alongside the new OAuth routes
+// (src/oauth/routes.ts).
 
 export function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -38,10 +44,27 @@ export async function isAuthorized(request: Request, env: Env): Promise<boolean>
   return constantTimeEqual(match[1]!, env.MCP_ACCESS_TOKEN);
 }
 
+async function readSiteId(request: Request): Promise<string> {
+  try {
+    const body = (await request.clone().json()) as { siteId?: unknown };
+    return typeof body.siteId === "string" ? body.siteId : "";
+  } catch {
+    return "";
+  }
+}
+
 /** Returns a Response for any legacy route it recognizes, or null if the caller should try other routes. */
 export async function handleLegacyRoute(request: Request, env: Env, pathname: string): Promise<Response | null> {
   if (pathname === "/health") {
     return jsonResponse(200, { status: "ok" });
+  }
+
+  if (pathname === "/terms" && request.method === "GET") {
+    return htmlResponse(TERMS_HTML);
+  }
+
+  if (pathname === "/privacy" && request.method === "GET") {
+    return htmlResponse(PRIVACY_HTML);
   }
 
   if (pathname === "/connect" && request.method === "GET") {
@@ -50,7 +73,7 @@ export async function handleLegacyRoute(request: Request, env: Env, pathname: st
 
   if (pathname === "/auth/stemlearn/start" && request.method === "POST") {
     if (!(await isAuthorized(request, env))) return unauthorizedResponse();
-    return handleLinkStart(env);
+    return handleLinkStart(env, await readSiteId(request));
   }
 
   if (pathname === "/auth/stemlearn/complete" && request.method === "POST") {
@@ -62,7 +85,7 @@ export async function handleLegacyRoute(request: Request, env: Env, pathname: st
 
   if (pathname === "/auth/stemlearn/disconnect" && request.method === "POST") {
     if (!(await isAuthorized(request, env))) return unauthorizedResponse();
-    return handleLinkDisconnect(env);
+    return handleLinkDisconnect(env, await readSiteId(request));
   }
 
   return null;

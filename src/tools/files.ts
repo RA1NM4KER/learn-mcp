@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
+import type { CourseRefResolver } from "../course-ref-resolver.js";
+import { RefSchema } from "./tool-ref-helpers.js";
 import { RESOURCE_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { loadCourseContents } from "../moodle-loaders.js";
 import { isMoodleFileContent } from "../moodle-api.js";
@@ -17,6 +19,7 @@ function formatSize(bytes: number): string {
 async function listResources(
   client: MoodleClient,
   courseId: number,
+  isAnchor: boolean,
   filenameFilter?: string,
   limit: number = RESOURCE_LIST_POLICY.defaultEntries,
 ): Promise<string> {
@@ -57,6 +60,12 @@ async function listResources(
         const size = formatSize(file.filesize);
         entryCount++;
         const mime = file.mimetype ?? "application/octet-stream";
+        if (!isAnchor) {
+          // moodle_download_file only dispatches to the anchor site so far (see download.ts) —
+          // don't hand out a fileId that would just fail there.
+          sectionLines.push(`- 📄 **${truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** *(${size})* — download not yet supported for this environment`);
+          continue;
+        }
         const fileId = await client.fileIdStore.seal({ userId: client.userId, courseId, fileurl: file.fileurl, mime, filename: file.filename, filesize: file.filesize });
         sectionLines.push(`- 📄 **${truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** *(${size})* — fileId: \`${fileId}\` — resource: \`moodle://files/${fileId}\``);
       }
@@ -78,20 +87,24 @@ async function listResources(
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
-export function registerFileTools(server: McpServer, client: MoodleClient): void {
+export function registerFileTools(server: McpServer, courseRefResolver: CourseRefResolver): void {
   server.tool(
     "moodle_list_resources",
     "List course materials grouped by their Moodle sections. Downloadable files include an opaque fileId and matching moodle://files/{fileId} resource URI; use either with the server, never a Moodle URL. External links are identified by name only and are not downloadable. Results are bounded; use filenameFilter to refine them.",
     {
-      courseId: z.number().describe("Course ID from moodle_list_courses"),
+      courseId: RefSchema.describe("Course ID from moodle_list_courses"),
       filenameFilter: z
         .string()
         .optional()
         .describe("Substring to match against file/link names (case-insensitive)."),
       limit: z.number().int().min(1).max(RESOURCE_LIST_POLICY.maxEntries).optional().describe("Maximum material entries to return (default: 25, max: 100)."),
     },
-    async ({ courseId, filenameFilter, limit }) => ({
-      content: [{ type: "text" as const, text: await listResources(client, courseId, filenameFilter, limit) }],
-    }),
+    async ({ courseId, filenameFilter, limit }) => {
+      const resolved = await courseRefResolver.resolve("course", courseId);
+      if (!resolved.ok) return { isError: true, content: [{ type: "text" as const, text: resolved.message }] };
+      return {
+        content: [{ type: "text" as const, text: await listResources(resolved.client, resolved.id, resolved.isAnchor, filenameFilter, limit) }],
+      };
+    },
   );
 }

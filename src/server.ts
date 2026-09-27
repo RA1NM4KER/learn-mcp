@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { getConfig, loadTokenFile } from "./config.js";
 import { MoodleClient } from "./moodle-client.js";
 import { createStemLearnServer } from "./create-server.js";
+import { createAnchorOnlyResolver } from "./course-ref-resolver.js";
 
 const isConfigured = Boolean(process.env.MOODLE_URL || loadTokenFile());
 
@@ -46,7 +47,7 @@ async function main() {
   const config = getConfig();
   const client = await MoodleClient.create(config);
 
-  const server = createStemLearnServer(client);
+  const server = createStemLearnServer(client, createAnchorOnlyResolver(client));
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MoodleClient } from "../src/moodle-client.js";
 import { registerFileTools } from "../src/tools/files.js";
+import { createAnchorOnlyResolver } from "../src/course-ref-resolver.js";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -77,7 +78,7 @@ describe("moodle_list_resources", () => {
   it("browsing without filenameFilter lists files with usable opaque file IDs and resource URIs", async () => {
     const client = await makeClient();
     const { server, handlers } = captureTool();
-    registerFileTools(server as never, client);
+    registerFileTools(server as never, createAnchorOnlyResolver(client));
 
     mockFetch.mockResolvedValueOnce(mockOkJson(MANY_FILES_COURSE));
     const result = (await handlers.get("moodle_list_resources")!({ courseId: 2722 })) as {
@@ -94,7 +95,7 @@ describe("moodle_list_resources", () => {
   it("with filenameFilter, returns only matching files and includes their fileId", async () => {
     const client = await makeClient();
     const { server, handlers } = captureTool();
-    registerFileTools(server as never, client);
+    registerFileTools(server as never, createAnchorOnlyResolver(client));
 
     mockFetch.mockResolvedValueOnce(mockOkJson(MANY_FILES_COURSE));
     const result = (await handlers.get("moodle_list_resources")!({
@@ -111,7 +112,7 @@ describe("moodle_list_resources", () => {
   it("uses a default file cap for large upstream responses", async () => {
     const client = await makeClient();
     const { server, handlers } = captureTool();
-    registerFileTools(server as never, client);
+    registerFileTools(server as never, createAnchorOnlyResolver(client));
     const contents = Array.from({ length: 101 }, (_, i) => ({ type: "file", filename: `file-${i}.pdf`, fileurl: `https://x/${i}`, filesize: 1 }));
     mockFetch.mockResolvedValueOnce(mockOkJson([{ id: 1, name: "Files", modules: [{ id: 1, name: "Files", modname: "folder", contents }] }]));
     const result = (await handlers.get("moodle_list_resources")!({ courseId: 1 })) as { content: { text: string }[] };
@@ -122,14 +123,14 @@ describe("moodle_list_resources", () => {
   it("rejects a file listing limit above the documented maximum", async () => {
     const client = await makeClient();
     const { server, schemas } = captureTool();
-    registerFileTools(server as never, client);
+    registerFileTools(server as never, createAnchorOnlyResolver(client));
     expect(() => schemas.get("moodle_list_resources")!.limit!.parse(101)).toThrow();
   });
 
   it("applies its global cap to links and folders as well as files", async () => {
     const client = await makeClient();
     const { server, handlers } = captureTool();
-    registerFileTools(server as never, client);
+    registerFileTools(server as never, createAnchorOnlyResolver(client));
     const modules = Array.from({ length: 101 }, (_, i) => ({ id: i, name: `Link ${i}`, modname: "url", url: `https://example.test/${i}` }));
     mockFetch.mockResolvedValueOnce(mockOkJson([{ id: 1, name: "Links", modules }]));
     const result = (await handlers.get("moodle_list_resources")!({ courseId: 1 })) as { content: { text: string }[] };

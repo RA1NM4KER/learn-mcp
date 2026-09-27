@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
+import type { CourseRefResolver } from "../course-ref-resolver.js";
+import { RefSchema } from "./tool-ref-helpers.js";
 import { sanitizeAndTruncateHtml, truncateText } from "../text.js";
 import { CALENDAR_EVENT_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { loadActionCalendarEvents, loadCalendarEvents, loadEnrolledCourses } from "../moodle-loaders.js";
@@ -101,16 +103,21 @@ export async function getCalendarEvents(
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
-export function registerCalendarTools(server: McpServer, client: MoodleClient): void {
+export function registerCalendarTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver): void {
   server.tool(
     "moodle_get_calendar_events",
-    "Get the student's upcoming deadlines and calendar events — assignments due, quizzes opening/closing, lecture/practical attendance registers, and other course calendar entries — across their courses, optionally filtered to one course. Good for 'what's coming up' / 'what's due this week' / 'what's on the calendar'. Defaults to the next 30 days.",
+    "Get the student's upcoming deadlines and calendar events — assignments due, quizzes opening/closing, lecture/practical attendance registers, and other course calendar entries — across their courses, optionally filtered to one course. Good for 'what's coming up' / 'what's due this week' / 'what's on the calendar'. Defaults to the next 30 days. Filtering to a course on a non-default SUNLearn environment shows that environment's calendar only, not merged with your default one.",
     {
-      courseId: z.number().optional().describe("Filter to a specific course ID (optional)"),
+      courseId: RefSchema.optional().describe("Filter to a specific course ID (optional)"),
       daysAhead: z.number().int().min(1).max(365).optional().describe("How many days ahead to look (default: 30, max: 365)"),
     },
-    async ({ courseId, daysAhead }) => ({
-      content: [{ type: "text" as const, text: await getCalendarEvents(client, courseId, daysAhead) }],
-    })
+    async ({ courseId, daysAhead }) => {
+      if (courseId === undefined) {
+        return { content: [{ type: "text" as const, text: await getCalendarEvents(client, undefined, daysAhead) }] };
+      }
+      const resolved = await courseRefResolver.resolve("course", courseId);
+      if (!resolved.ok) return { isError: true, content: [{ type: "text" as const, text: resolved.message }] };
+      return { content: [{ type: "text" as const, text: await getCalendarEvents(resolved.client, resolved.id, daysAhead) }] };
+    },
   );
 }

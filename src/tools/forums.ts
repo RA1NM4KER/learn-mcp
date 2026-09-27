@@ -1,6 +1,7 @@
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
+import type { CourseRefResolver } from "../course-ref-resolver.js";
+import { RefSchema, withResolvedCourseListing, withResolvedRef, type SubRefSealer } from "./tool-ref-helpers.js";
 import { sanitizeAndTruncateHtml, truncateText } from "../text.js";
 import { loadForumDiscussions, loadForums } from "../moodle-loaders.js";
 import type { MoodleDiscussion, MoodleForum } from "../moodle-api.js";
@@ -23,7 +24,7 @@ export async function listForumsRaw(client: MoodleClient, courseId: number): Pro
   return loadForums(client, courseId);
 }
 
-export async function listForums(client: MoodleClient, courseId: number): Promise<string> {
+export async function listForums(client: MoodleClient, courseId: number, sealer?: SubRefSealer): Promise<string> {
   if (!client.supports("mod_forum_get_forums_by_courses")) {
     return "Forum API is not enabled on your Moodle. Ask your admin to enable mod_forum web services.";
   }
@@ -34,7 +35,8 @@ export async function listForums(client: MoodleClient, courseId: number): Promis
   const lines: string[] = [`## Forums — Course ${courseId}\n`];
   for (const forum of forums.slice(0, FORUM_LIST_POLICY.maxRenderedForums)) {
     const discussionCount = forum.numdiscussions != null ? ` (${forum.numdiscussions} discussions)` : "";
-    lines.push(`- **${truncateText(forum.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**${discussionCount} — ID: \`${forum.id}\` (use with moodle_get_forum_discussions)`);
+    const idLabel = sealer ? await sealer.seal("forum", forum.id) : forum.id;
+    lines.push(`- **${truncateText(forum.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**${discussionCount} — ID: \`${idLabel}\` (use with moodle_get_forum_discussions)`);
   }
   if (forums.length > FORUM_LIST_POLICY.maxRenderedForums) {
     lines.push(`\n_Showing the first ${FORUM_LIST_POLICY.maxRenderedForums} forums._`);
@@ -92,22 +94,18 @@ export async function getForumDiscussions(client: MoodleClient, forumId: number)
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
-export function registerForumTools(server: McpServer, client: MoodleClient): void {
+export function registerForumTools(server: McpServer, courseRefResolver: CourseRefResolver): void {
   server.tool(
     "moodle_list_forums",
     "List the forums in one of the student's courses (e.g. the course's Announcements/News forum, discussion boards). Use this to find a forum's ID before reading its posts with moodle_get_forum_discussions.",
-    { courseId: z.number().describe("Course ID from moodle_list_courses") },
-    async ({ courseId }) => ({
-      content: [{ type: "text" as const, text: await listForums(client, courseId) }],
-    })
+    { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
+    async ({ courseId }) => withResolvedCourseListing(courseRefResolver, courseId, listForums),
   );
 
   server.tool(
     "moodle_get_forum_discussions",
     "Read recent posts in a course forum — most useful for a course's Announcements forum, to see what the lecturer has posted (title, author, reply count, last activity, and the post body).",
-    { forumId: z.number().describe("Forum ID from moodle_list_forums (the real forum id, not a course-module id)") },
-    async ({ forumId }) => ({
-      content: [{ type: "text" as const, text: await getForumDiscussions(client, forumId) }],
-    })
+    { forumId: RefSchema.describe("Forum ID from moodle_list_forums (the real forum id, not a course-module id)") },
+    async ({ forumId }) => withResolvedRef(courseRefResolver, "forum", forumId, getForumDiscussions),
   );
 }

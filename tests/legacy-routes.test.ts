@@ -69,7 +69,7 @@ describe("handleLegacyRoute", () => {
     const response = await handleLegacyRoute(new Request("https://worker.test/connect"), env, "/connect");
     expect(response?.status).toBe(200);
     expect(response?.headers.get("Content-Type")).toContain("text/html");
-    expect(await response!.text()).toContain("Connect STEMLearn");
+    expect(await response!.text()).toContain("Connect SUNLearn");
   });
 
   it("returns null for an unrecognized path (caller falls through to 404)", async () => {
@@ -89,10 +89,14 @@ describe("handleLegacyRoute", () => {
     expect(response?.status).toBe(401);
   });
 
-  it("accepts /auth/stemlearn/start with a valid bearer token", async () => {
+  it("accepts /auth/stemlearn/start with a valid bearer token and a site id", async () => {
     const env = makeEnv();
     const response = await handleLegacyRoute(
-      new Request("https://worker.test/auth/stemlearn/start", { method: "POST", headers: { Authorization: `Bearer ${env.MCP_ACCESS_TOKEN}` } }),
+      new Request("https://worker.test/auth/stemlearn/start", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.MCP_ACCESS_TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: "stemlearn" }),
+      }),
       env,
       "/auth/stemlearn/start",
     );
@@ -100,6 +104,20 @@ describe("handleLegacyRoute", () => {
     const body = (await response!.json()) as { sessionId: string; url: string };
     expect(body.sessionId).toBeTruthy();
     expect(body.url).toContain("admin/tool/mobile/launch.php");
+  });
+
+  it("rejects /auth/stemlearn/start for an unknown site id", async () => {
+    const env = makeEnv();
+    const response = await handleLegacyRoute(
+      new Request("https://worker.test/auth/stemlearn/start", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.MCP_ACCESS_TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: "not-a-real-site" }),
+      }),
+      env,
+      "/auth/stemlearn/start",
+    );
+    expect(response?.status).toBe(400);
   });
 
   it("/auth/stemlearn/complete is not bearer-gated (session id is the capability)", async () => {

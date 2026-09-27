@@ -7,3 +7,7 @@ dist/
 
 # Moodle auth token — never commit. chmod 600, written by `npm run auth`.
 .auth/
+
+# Local Wrangler dev secrets/state — never commit.
+.dev.vars
+.wrangler/

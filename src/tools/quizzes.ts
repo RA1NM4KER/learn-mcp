@@ -1,6 +1,7 @@
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
+import type { CourseRefResolver } from "../course-ref-resolver.js";
+import { RefSchema, withResolvedCourseListing, withResolvedRef, type SubRefSealer } from "./tool-ref-helpers.js";
 import { QUIZ_ATTEMPT_POLICY, QUIZ_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { loadCourseContents, loadQuizAttempts, loadQuizzes } from "../moodle-loaders.js";
 import { truncateText } from "../text.js";
@@ -16,7 +17,7 @@ function formatDuration(seconds: number): string {
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
 }
 
-export async function listQuizzes(client: MoodleClient, courseId: number): Promise<string> {
+export async function listQuizzes(client: MoodleClient, courseId: number, sealer?: SubRefSealer): Promise<string> {
   if (!client.supports("mod_quiz_get_quizzes_by_courses")) {
     return "Quiz API is not enabled on your Moodle. Ask your admin to enable mod_quiz web services.";
   }
@@ -48,8 +49,9 @@ export async function listQuizzes(client: MoodleClient, courseId: number): Promi
         sectionLines.push(`- **${truncateText(mod.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** *(details unavailable)*`);
         continue;
       }
+      const idLabel = sealer ? await sealer.seal("quiz", q.id) : q.id;
       sectionLines.push(`- **${truncateText(q.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**`);
-      sectionLines.push(`  ID: \`${q.id}\` | Time limit: ${formatDuration(q.timelimit)} | Attempts: ${q.attempts === 0 ? "Unlimited" : q.attempts}`);
+      sectionLines.push(`  ID: \`${idLabel}\` | Time limit: ${formatDuration(q.timelimit)} | Attempts: ${q.attempts === 0 ? "Unlimited" : q.attempts}`);
       if (q.timeopen) sectionLines.push(`  Opens: ${formatDate(q.timeopen)}`);
       if (q.timeclose) sectionLines.push(`  Closes: ${formatDate(q.timeclose)}`);
     }
@@ -91,22 +93,18 @@ export async function getQuizAttempts(client: MoodleClient, quizId: number): Pro
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
-export function registerQuizTools(server: McpServer, client: MoodleClient): void {
+export function registerQuizTools(server: McpServer, courseRefResolver: CourseRefResolver): void {
   server.tool(
     "moodle_list_quizzes",
     "List the quizzes in one of the student's courses, with time limits, allowed attempts, and open/close dates.",
-    { courseId: z.number().describe("Course ID from moodle_list_courses") },
-    async ({ courseId }) => ({
-      content: [{ type: "text" as const, text: await listQuizzes(client, courseId) }],
-    })
+    { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
+    async ({ courseId }) => withResolvedCourseListing(courseRefResolver, courseId, listQuizzes),
   );
 
   server.tool(
     "moodle_get_quiz_attempts",
     "Get the student's own past attempt history for one quiz — grades, states, and timing.",
-    { quizId: z.number().describe("Quiz ID from moodle_list_quizzes") },
-    async ({ quizId }) => ({
-      content: [{ type: "text" as const, text: await getQuizAttempts(client, quizId) }],
-    })
+    { quizId: RefSchema.describe("Quiz ID from moodle_list_quizzes") },
+    async ({ quizId }) => withResolvedRef(courseRefResolver, "quiz", quizId, getQuizAttempts),
   );
 }

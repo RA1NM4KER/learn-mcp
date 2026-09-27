@@ -1,6 +1,7 @@
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
+import type { CourseRefResolver } from "../course-ref-resolver.js";
+import { RefSchema, withResolvedCourseListing, withResolvedRef, type SubRefSealer } from "./tool-ref-helpers.js";
 import { loadAssignments, loadCourseContents, loadSubmissionStatus } from "../moodle-loaders.js";
 import { ASSIGNMENT_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { truncateText } from "../text.js";
@@ -13,7 +14,7 @@ function formatDate(ts: number): string {
   });
 }
 
-export async function listAssignments(client: MoodleClient, courseId: number): Promise<string> {
+export async function listAssignments(client: MoodleClient, courseId: number, sealer?: SubRefSealer): Promise<string> {
   if (!client.supports("mod_assign_get_assignments")) {
     return "Assignments API is not enabled on your Moodle. Ask your admin to enable the mod_assign web service.";
   }
@@ -51,8 +52,9 @@ export async function listAssignments(client: MoodleClient, courseId: number): P
       }
       const due = detail.duedate ? `Due: ${formatDate(detail.duedate)}` : "No due date";
       const maxGrade = detail.grade > 0 ? ` | Max grade: ${detail.grade}` : "";
+      const idLabel = sealer ? await sealer.seal("assignment", detail.id) : detail.id;
       sectionLines.push(`- **${truncateText(detail.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** — ${due}${maxGrade}`);
-      sectionLines.push(`  ID: \`${detail.id}\` (use with moodle_get_assignment)`);
+      sectionLines.push(`  ID: \`${idLabel}\` (use with moodle_get_assignment)`);
     }
     if (sectionLines.length > 0) {
       lines.push(`### ${truncateText(section.name || "General", TEXT_OUTPUT_POLICY.maxLabelCharacters)}`, ...sectionLines, "");
@@ -94,22 +96,18 @@ export async function getAssignment(client: MoodleClient, assignmentId: number):
   return lines.join("\n");
 }
 
-export function registerAssignmentTools(server: McpServer, client: MoodleClient): void {
+export function registerAssignmentTools(server: McpServer, courseRefResolver: CourseRefResolver): void {
   server.tool(
     "moodle_list_assignments",
     "List all assignments the student has in a course, with due dates and max grades. Use this to answer 'what assignments do I have' or 'when is X due'. Returns assignment IDs for use with moodle_get_assignment.",
-    { courseId: z.number().describe("Course ID from moodle_list_courses") },
-    async ({ courseId }) => ({
-      content: [{ type: "text" as const, text: await listAssignments(client, courseId) }],
-    })
+    { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
+    async ({ courseId }) => withResolvedCourseListing(courseRefResolver, courseId, listAssignments),
   );
 
   server.tool(
     "moodle_get_assignment",
     "Check the student's own submission status and grade feedback for one assignment — 'have I submitted this', 'was it graded', 'what feedback did I get'.",
-    { assignmentId: z.number().describe("Assignment ID from moodle_list_assignments") },
-    async ({ assignmentId }) => ({
-      content: [{ type: "text" as const, text: await getAssignment(client, assignmentId) }],
-    })
+    { assignmentId: RefSchema.describe("Assignment ID from moodle_list_assignments") },
+    async ({ assignmentId }) => withResolvedRef(courseRefResolver, "assignment", assignmentId, getAssignment),
   );
 }
