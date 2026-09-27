@@ -1,11 +1,12 @@
 import { normalizeUrl } from "../config.js";
+import { isAllowedMoodleHost } from "../sunlearn-sites.js";
 
-// This deployment targets exactly one Moodle instance. A credential row's
-// stored moodle_base_url is never trusted as the destination for a decrypted
-// token (see resolve-config.ts) — this allowlist only gates what's allowed to
-// be written to, and re-validated from, that column, so a database edit
-// alone can never smuggle in a host we'd actually send a token to.
-const ALLOWED_MOODLE_HOSTS = ["stemlearn.sun.ac.za"];
+// A credential row's stored moodle_base_url is never trusted as the
+// destination for a decrypted token purely because it's present in the
+// database — this allowlist (backed by sunlearn-sites.ts, the single
+// registry of supported SUNLearn instances) only gates what's allowed to be
+// written to, and re-validated from, that column, so a database edit alone
+// can never smuggle in a host we'd actually send a token to.
 
 export class DisallowedMoodleHostError extends Error {
   constructor() {
@@ -18,7 +19,7 @@ export class DisallowedMoodleHostError extends Error {
 export function assertAllowedMoodleBaseUrl(rawUrl: string): string {
   const normalized = normalizeUrl(rawUrl);
   const { protocol, hostname } = new URL(normalized);
-  if (protocol !== "https:" || !ALLOWED_MOODLE_HOSTS.includes(hostname)) {
+  if (protocol !== "https:" || !isAllowedMoodleHost(hostname)) {
     throw new DisallowedMoodleHostError();
   }
   return normalized;
