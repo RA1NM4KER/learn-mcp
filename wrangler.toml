@@ -6,10 +6,15 @@ compatibility_date = "2025-11-01"
 # support for SSRF-safe outbound fetches of client metadata documents.
 compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 
-# Canonical public endpoint. The legacy workers.dev endpoint stays enabled
-# during the OAuth migration so existing connected clients keep working.
-# Keep the existing endpoint live while clients migrate to the custom domain.
+# Legacy endpoints. Both stay enabled during the sunlearn-mcp rebrand so
+# existing connected clients (on workers.dev, or on the old stemlearn-mcp
+# custom domain) keep working — see src/oauth/issuer.ts for how each request
+# is routed to the right issuer identity.
 workers_dev = true
+
+[[routes]]
+pattern = "sunlearn-mcp.kefas.co.za"
+custom_domain = true
 
 [[routes]]
 pattern = "stemlearn-mcp.kefas.co.za"

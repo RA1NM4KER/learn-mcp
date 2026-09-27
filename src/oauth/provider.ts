@@ -6,9 +6,10 @@ import { handleAuthorize, handleAuthorizeLink, handleAuthorizeContinue, handleAu
 import { DEFAULT_USER_ID } from "../linking/resolve-config.js";
 import { issuerForRequest } from "./issuer.js";
 
-// This Worker serves both its canonical custom-domain issuer and its legacy
-// workers.dev issuer during migration; issuerForRequest selects one per
-// request. See oauth/issuer.ts.
+// This Worker serves its current canonical custom-domain issuer plus every
+// previously-canonical issuer (workers.dev, the pre-rebrand stemlearn-mcp
+// custom domain) indefinitely; issuerForRequest selects one per request. See
+// oauth/issuer.ts.
 
 async function defaultHandlerFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -55,7 +56,7 @@ function buildOAuthProvider(issuerUrl: string): OAuthProvider<Env> {
       resource: mcpResourceUrl,
       authorization_servers: [issuerUrl],
       scopes_supported: ["stemlearn:read"],
-      resource_name: "STEMLearn MCP",
+      resource_name: "SUNLearn MCP",
     },
     // The legacy static-bearer lane, layered onto the same /mcp route the
     // library protects. Only ever recognizes the exact configured
