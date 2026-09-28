@@ -36,7 +36,7 @@ export function renderConsentPage(details: ConsentDescription, handle: string, l
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>Connect SUNLearn — SUNLearn MCP</title>
+<title>Connect SUNLearn: SUNLearn MCP</title>
 <style>
 ${PAGE_SHELL_CSS}
   .card { padding: 28px 30px; margin-bottom: 24px; }

@@ -2,6 +2,7 @@ import { OAuthProvider, type OAuthResourceContext } from "@cloudflare/workers-oa
 import type { Env, McpProps } from "./env.js";
 import { handleMcpRequest } from "../mcp-handler.js";
 import { handleLegacyRoute, constantTimeEqual, jsonResponse } from "../legacy-routes.js";
+import { handleMarketingRoute } from "../marketing-routes.js";
 import { handleAuthorize, handleAuthorizeLink, handleAuthorizeContinue, handleAuthorizeDisconnect, handleConsentSubmit } from "./routes.js";
 import { DEFAULT_USER_ID } from "../linking/resolve-config.js";
 import { issuerForRequest } from "./issuer.js";
@@ -29,6 +30,9 @@ async function defaultHandlerFetch(request: Request, env: Env): Promise<Response
   if (url.pathname === "/authorize/consent" && request.method === "POST") {
     return handleConsentSubmit(request, env);
   }
+
+  const marketing = handleMarketingRoute(url.pathname, request.method);
+  if (marketing) return marketing;
 
   const legacy = await handleLegacyRoute(request, env, url.pathname);
   if (legacy) return legacy;

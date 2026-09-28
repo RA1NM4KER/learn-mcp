@@ -27,7 +27,7 @@ async function listResources(
 
   const needle = filenameFilter?.toLowerCase();
 
-  const lines: string[] = [`## Files — Course ${courseId}\n`];
+  const lines: string[] = [`## Files: Course ${courseId}\n`];
   let hasEntries = false;
   let entryCount = 0;
   let omitted = 0;
@@ -63,11 +63,11 @@ async function listResources(
         if (!isAnchor) {
           // moodle_download_file only dispatches to the anchor site so far (see download.ts) —
           // don't hand out a fileId that would just fail there.
-          sectionLines.push(`- 📄 **${truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** *(${size})* — download not yet supported for this environment`);
+          sectionLines.push(`- 📄 **${truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** *(${size})*, download not yet supported for this environment`);
           continue;
         }
         const fileId = await client.fileIdStore.seal({ userId: client.userId, courseId, fileurl: file.fileurl, mime, filename: file.filename, filesize: file.filesize });
-        sectionLines.push(`- 📄 **${truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** *(${size})* — fileId: \`${fileId}\` — resource: \`moodle://files/${fileId}\``);
+        sectionLines.push(`- 📄 **${truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** *(${size})*, fileId: \`${fileId}\`, resource: \`moodle://files/${fileId}\``);
       }
     }
 

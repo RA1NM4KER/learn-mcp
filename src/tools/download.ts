@@ -9,7 +9,7 @@ import { truncateText } from "../text.js";
 export function registerDownloadTool(server: McpServer, client: MoodleClient): void {
   server.tool(
     "moodle_download_file",
-    "Download a Moodle course file by its opaque fileId (from moodle_list_resources). Returns text for text/JSON/XML files; returns the raw bytes as an embedded resource for binary formats like PDFs, DOCX, images. The server fetches the file — you never need to fetch Moodle URLs directly.",
+    "Download a Moodle course file by its opaque fileId (from moodle_list_resources). Returns text for text/JSON/XML files; returns the raw bytes as an embedded resource for binary formats like PDFs, DOCX, images. The server fetches the file, so you never need to fetch Moodle URLs directly.",
     {
       fileId: z.string().describe("Opaque fileId returned by moodle_list_resources"),
     },
@@ -66,7 +66,7 @@ export function registerDownloadTool(server: McpServer, client: MoodleClient): v
         content: [
           {
             type: "text" as const,
-            text: `**${truncateText(ref.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** (${mime}, ${downloaded.bytes.length} bytes) — embedded below.`,
+            text: `**${truncateText(ref.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** (${mime}, ${downloaded.bytes.length} bytes), embedded below.`,
           },
           {
             type: "resource" as const,

@@ -53,7 +53,7 @@ export async function listCourses(client: MoodleClient, multiSite?: MultiSiteCon
     if (anchorCourses.length === 0) return "You are not enrolled in any courses.";
     const displayed = anchorCourses.slice(0, 100);
     const lines = displayed.map(
-      (c) => `- **${truncateText(c.fullname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** (${truncateText(c.shortname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}) — ID: \`${c.id}\``
+      (c) => `- **${truncateText(c.fullname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** (${truncateText(c.shortname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}), ID: \`${c.id}\``
     );
     return truncateText(`## Your Courses\n\n${lines.join("\n")}${anchorCourses.length > displayed.length ? "\n\n_Showing the first 100 courses._" : ""}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
   }
@@ -74,12 +74,12 @@ export async function listCourses(client: MoodleClient, multiSite?: MultiSiteCon
   const displayed = rows.slice(0, 100);
   const lines = displayed.map(
     (r) =>
-      `- **${truncateText(r.fullname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** (${truncateText(r.shortname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}) — _${truncateText(r.siteName, TEXT_OUTPUT_POLICY.maxLabelCharacters)}_ — ID: \`${r.idLabel}\``,
+      `- **${truncateText(r.fullname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** (${truncateText(r.shortname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}), _${truncateText(r.siteName, TEXT_OUTPUT_POLICY.maxLabelCharacters)}_, ID: \`${r.idLabel}\``,
   );
   const notes = [
     rows.length > displayed.length ? "_Showing the first 100 courses._" : "",
     unavailable.length > 0 ? `_Temporarily unavailable: ${unavailable.map((n) => truncateText(n, TEXT_OUTPUT_POLICY.maxLabelCharacters)).join(", ")}._` : "",
-    "_Every ID shown above — including opaque ones — can be passed directly into any other tool (moodle_get_course, moodle_list_assignments, moodle_get_grades, course_overview, etc.) exactly as given._",
+    "_Every ID shown above, including opaque ones, can be passed directly into any other tool (moodle_get_course, moodle_list_assignments, moodle_get_grades, course_overview, etc.) exactly as given._",
   ].filter(Boolean);
   return truncateText(`## Your Courses\n\n${lines.join("\n")}${notes.length ? `\n\n${notes.join("\n")}` : ""}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
@@ -139,7 +139,7 @@ export async function getCourseNoticesRaw(client: MoodleClient, courseId: number
 export async function getCourseNotices(client: MoodleClient, courseId: number): Promise<string> {
   const notices = await getCourseNoticesRaw(client, courseId);
   if (notices.length === 0) return "No current deadline or practical notices were found in course-section summaries.";
-  const lines = [`## Current Course Notices — Course ${courseId}`, ""];
+  const lines = [`## Current Course Notices: Course ${courseId}`, ""];
   if (hasConflictingNoticeDates(notices)) {
     lines.push("⚠️ **Conflicting deadline dates appear in course-section notices.** The notices below are shown with their section source; verify the applicable date with the lecturer before relying on an older PDF or post.", "");
   }
@@ -156,14 +156,14 @@ export function registerCourseTools(
 ): void {
   server.tool(
     "moodle_list_courses",
-    "List all courses the student is currently enrolled in, across every connected SUNLearn environment. Usually the first call to make — gives the course IDs every other tool needs.",
+    "List all courses the student is currently enrolled in, across every connected SUNLearn environment. Usually the first call to make: gives the course IDs every other tool needs.",
     {},
     async () => ({ content: [{ type: "text" as const, text: await listCourses(client, multiSite) }] })
   );
 
   server.tool(
     "moodle_get_course",
-    "Get the full structure of one course — its sections/weeks and every activity/resource in them. Use moodle_list_courses first to get the course ID.",
+    "Get the full structure of one course: its sections/weeks and every activity/resource in them. Use moodle_list_courses first to get the course ID.",
     { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
     async ({ courseId }) => withResolvedRef(courseRefResolver, "course", courseId, getCourse),
   );

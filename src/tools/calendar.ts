@@ -86,7 +86,7 @@ export async function getCalendarEvents(
     lines.push(`### ${courseName}`);
     for (const e of courseEvents) {
       const type = e.eventtype ? `\`${truncateText(e.eventtype, TEXT_OUTPUT_POLICY.maxLabelCharacters)}\`` : "";
-      lines.push(`- **${truncateText(e.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** — ${formatMoodleDateTime(e.timestart)} ${type}`);
+      lines.push(`- **${truncateText(e.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**, ${formatMoodleDateTime(e.timestart)} ${type}`);
       const desc = e.description
         ? sanitizeAndTruncateHtml(e.description, TEXT_OUTPUT_POLICY.maxCalendarDescriptionCharacters)
         : "";
@@ -101,7 +101,7 @@ export async function getCalendarEvents(
 export function registerCalendarTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver): void {
   server.tool(
     "moodle_get_calendar_events",
-    "Get the student's upcoming deadlines and calendar events — assignments due, quizzes opening/closing, lecture/practical attendance registers, and other course calendar entries — across their courses, optionally filtered to one course. Good for 'what's coming up' / 'what's due this week' / 'what's on the calendar'. Defaults to the next 30 days. Filtering to a course on a non-default SUNLearn environment shows that environment's calendar only, not merged with your default one.",
+    "Get the student's upcoming deadlines and calendar events: assignments due, quizzes opening/closing, lecture/practical attendance registers, and other course calendar entries, across their courses, optionally filtered to one course. Good for 'what's coming up' / 'what's due this week' / 'what's on the calendar'. Defaults to the next 30 days. Filtering to a course on a non-default SUNLearn environment shows that environment's calendar only, not merged with your default one.",
     {
       courseId: RefSchema.optional().describe("Filter to a specific course ID (optional)"),
       daysAhead: z.number().int().min(1).max(365).optional().describe("How many days ahead to look (default: 30, max: 365)"),

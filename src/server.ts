@@ -9,9 +9,9 @@ const isConfigured = Boolean(process.env.MOODLE_URL || loadTokenFile());
 
 if (process.stdin.isTTY && !isConfigured) {
   console.log(`
-sunlearn-mcp v0.1.0 — SUNLearn (Moodle) MCP Server
+sunlearn-mcp v0.1.0: SUNLearn (Moodle) MCP Server
 
-This tool runs as a background server for an MCP client (e.g. Claude Code) —
+This tool runs as a background server for an MCP client (e.g. Claude Code);
 you don't run it directly by hand.
 
 ━━━ First: authenticate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -21,7 +21,7 @@ Opens a browser for SUNLearn SSO + Microsoft Authenticator sign-in, then
 saves a token to .auth/token.json. No credentials are pasted anywhere.
 
 ━━━ Then: point your MCP client at this server ━━━━━━━━━━━━━━━━━━━
-No env vars needed — the server reads .auth/token.json automatically.
+No env vars needed. The server reads .auth/token.json automatically.
 
 Claude Code:
   claude mcp add sunlearn -- node ${process.cwd()}/dist/server.js

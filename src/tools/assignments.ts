@@ -26,7 +26,7 @@ export async function listAssignments(client: MoodleClient, courseId: number, se
   const assignments = assignData.courses[0]?.assignments ?? [];
   const byModule = new Map(assignments.map((a) => [a.cmid, a]));
 
-  const lines: string[] = [`## Assignments — Course ${courseId}\n`];
+  const lines: string[] = [`## Assignments: Course ${courseId}\n`];
   let hasAny = false;
   let renderedAssignments = 0;
   let omittedAssignments = 0;
@@ -50,7 +50,7 @@ export async function listAssignments(client: MoodleClient, courseId: number, se
       const due = detail.duedate ? `Due: ${formatDate(detail.duedate)}` : "No due date";
       const maxGrade = detail.grade > 0 ? ` | Max grade: ${detail.grade}` : "";
       const idLabel = sealer ? await sealer.seal("assignment", detail.id) : detail.id;
-      sectionLines.push(`- **${truncateText(detail.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** — ${due}${maxGrade}`);
+      sectionLines.push(`- **${truncateText(detail.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**, ${due}${maxGrade}`);
       sectionLines.push(`  ID: \`${idLabel}\` (use with moodle_get_assignment)`);
     }
     if (sectionLines.length > 0) {
@@ -71,7 +71,7 @@ export async function getAssignment(client: MoodleClient, assignmentId: number):
 
   const status = await loadSubmissionStatus(client, assignmentId);
 
-  const lines: string[] = [`## Assignment ${assignmentId} — Submission Status\n`];
+  const lines: string[] = [`## Assignment ${assignmentId}: Submission Status\n`];
 
   const submission = status.lastattempt?.submission;
   if (submission) {
@@ -87,7 +87,7 @@ export async function getAssignment(client: MoodleClient, assignmentId: number):
   lines.push(`**Graded:** ${graded ? "Yes" : "No"}`);
 
   if (status.feedback) {
-    lines.push(`\n**Grade:** ${truncateText(status.feedback.gradefordisplay ?? "—", TEXT_OUTPUT_POLICY.maxLabelCharacters)}`);
+    lines.push(`\n**Grade:** ${truncateText(status.feedback.gradefordisplay ?? "N/A", TEXT_OUTPUT_POLICY.maxLabelCharacters)}`);
   }
 
   return lines.join("\n");
@@ -103,7 +103,7 @@ export function registerAssignmentTools(server: McpServer, courseRefResolver: Co
 
   server.tool(
     "moodle_get_assignment",
-    "Check the student's own submission status and grade feedback for one assignment — 'have I submitted this', 'was it graded', 'what feedback did I get'.",
+    "Check the student's own submission status and grade feedback for one assignment: 'have I submitted this', 'was it graded', 'what feedback did I get'.",
     { assignmentId: RefSchema.describe("Assignment ID from moodle_list_assignments") },
     async ({ assignmentId }) => withResolvedRef(courseRefResolver, "assignment", assignmentId, getAssignment),
   );

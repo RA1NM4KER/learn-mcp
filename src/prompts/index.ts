@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 export function registerPrompts(server: McpServer): void {
   server.prompt(
     "summarize-course",
-    "Summarize a Moodle course — sections, materials, and activities — organized by the course's own structure",
+    "Summarize a Moodle course: sections, materials, and activities, organized by the course's own structure",
     { courseId: z.string().describe("Course ID (from moodle_list_courses)") },
     async ({ courseId }) => ({
       messages: [
@@ -61,7 +61,7 @@ Steps:
 
   server.prompt(
     "build-study-notes",
-    "Read all course materials and build a linked Obsidian vault — one note per topic, with [[wikilinks]] between concepts and a MOC index",
+    "Read all course materials and build a linked Obsidian vault: one note per topic, with [[wikilinks]] between concepts and a MOC index",
     {
       courseId: z.string().describe("Course ID (from moodle_list_courses)"),
       vaultPath: z.string().describe("Absolute path to your Obsidian vault folder, e.g. ~/obsidian/finals"),
@@ -115,9 +115,9 @@ Steps:
 5. Call moodle_list_assignments with courseId=${courseId}
 
 Produce a study guide:
-- **Weak spots** (topics where I lost grade points or failed quiz questions) — prioritize these
+- **Weak spots** (topics where I lost grade points or failed quiz questions): prioritize these
 - **Topic by topic** breakdown: key concepts, likely exam questions, things to review
-- **Quick reference** — key formulas, definitions, and facts in bullet form
+- **Quick reference**: key formulas, definitions, and facts in bullet form
 - **Suggested study order** based on difficulty and point weight`,
           },
         },
@@ -127,7 +127,7 @@ Produce a study guide:
 
   server.prompt(
     "search-notes",
-    "Find all course materials related to a topic using natural language — reads matching files and synthesizes a focused answer",
+    "Find all course materials related to a topic using natural language: reads matching files and synthesizes a focused answer",
     {
       courseId: z.string().describe("Course ID (from moodle_list_courses)"),
       query: z.string().describe("What you're looking for, e.g. 'derivatives and limits', 'OSI model', 'contrat de travail'"),
@@ -143,7 +143,7 @@ Produce a study guide:
 Steps:
 1. Call moodle_get_course with courseId=${courseId} to see all section names and module names
 2. Call moodle_list_resources with courseId=${courseId} to see all file names
-3. Look at the section names, module names, and file names — identify which ones are likely to contain information about "${query}" (semantic reasoning, not just keyword match)
+3. Look at the section names, module names, and file names; identify which ones are likely to contain information about "${query}" (semantic reasoning, not just keyword match)
 4. For each relevant file, read the exact moodle://files/{fileId} resource URI returned by moodle_list_resources
 5. Synthesize a focused answer about "${query}" from what you found
 

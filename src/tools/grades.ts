@@ -23,7 +23,7 @@ export async function getGrades(client: MoodleClient, courseId: number): Promise
     (userGrades.gradecategories ?? []).map((c) => [c.id, c.fullname])
   );
 
-  const lines: string[] = [`## Grades — Course ${courseId}\n`];
+  const lines: string[] = [`## Grades: Course ${courseId}\n`];
   const courseTotalItem = userGrades.gradeitems.find((item) => item.itemtype === "course");
   const detailItemLimit = courseTotalItem
     ? GRADE_LIST_POLICY.maxRenderedItems - 1
@@ -57,11 +57,11 @@ export async function getGrades(client: MoodleClient, courseId: number): Promise
     lines.push("| Item | Grade | Max | % | Feedback |");
     lines.push("|------|-------|-----|---|----------|");
     for (const item of rendered) {
-      const name = truncateText(item.itemname ?? item.itemmodule ?? "—", TEXT_OUTPUT_POLICY.maxLabelCharacters);
-      const grade = truncateText(item.gradeformatted || "—", TEXT_OUTPUT_POLICY.maxLabelCharacters);
-      const max = item.grademax > 0 ? String(item.grademax) : "—";
-      const pct = item.percentageformatted ?? "—";
-      const feedback = sanitizeAndTruncateHtml(item.feedback ?? "", TEXT_OUTPUT_POLICY.maxGradeFeedbackCharacters).replace(/\n/g, " ") || "—";
+      const name = truncateText(item.itemname ?? item.itemmodule ?? "N/A", TEXT_OUTPUT_POLICY.maxLabelCharacters);
+      const grade = truncateText(item.gradeformatted || "N/A", TEXT_OUTPUT_POLICY.maxLabelCharacters);
+      const max = item.grademax > 0 ? String(item.grademax) : "N/A";
+      const pct = item.percentageformatted ?? "N/A";
+      const feedback = sanitizeAndTruncateHtml(item.feedback ?? "", TEXT_OUTPUT_POLICY.maxGradeFeedbackCharacters).replace(/\n/g, " ") || "N/A";
       lines.push(`| ${name} | ${grade} | ${max} | ${pct} | ${feedback} |`);
     }
     lines.push("");
@@ -69,7 +69,7 @@ export async function getGrades(client: MoodleClient, courseId: number): Promise
 
   // Course total
   if (courseTotalItem) {
-    lines.push(`**Course Total:** ${truncateText(courseTotalItem.gradeformatted, TEXT_OUTPUT_POLICY.maxLabelCharacters)} / ${courseTotalItem.grademax} (${truncateText(courseTotalItem.percentageformatted ?? "—", TEXT_OUTPUT_POLICY.maxLabelCharacters)})`);
+    lines.push(`**Course Total:** ${truncateText(courseTotalItem.gradeformatted, TEXT_OUTPUT_POLICY.maxLabelCharacters)} / ${courseTotalItem.grademax} (${truncateText(courseTotalItem.percentageformatted ?? "N/A", TEXT_OUTPUT_POLICY.maxLabelCharacters)})`);
   }
   if (omittedItems) lines.push(`\n_Showing the first ${GRADE_LIST_POLICY.maxRenderedItems} grade items; ${omittedItems} additional items were omitted._`);
 
@@ -79,7 +79,7 @@ export async function getGrades(client: MoodleClient, courseId: number): Promise
 export function registerGradeTools(server: McpServer, courseRefResolver: CourseRefResolver): void {
   server.tool(
     "moodle_get_grades",
-    "Get the student's own grades for a course — every graded item (assignments, tests, quizzes), category, percentage, and feedback comment, plus the course total. Answers 'what's my grade in this course' or 'how did I do on X'.",
+    "Get the student's own grades for a course: every graded item (assignments, tests, quizzes), category, percentage, and feedback comment, plus the course total. Answers 'what's my grade in this course' or 'how did I do on X'.",
     { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
     async ({ courseId }) => withResolvedRef(courseRefResolver, "course", courseId, getGrades),
   );

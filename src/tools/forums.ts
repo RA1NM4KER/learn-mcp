@@ -31,11 +31,11 @@ export async function listForums(client: MoodleClient, courseId: number, sealer?
   const forums = await listForumsRaw(client, courseId);
   if (forums.length === 0) return "No forums found in this course.";
 
-  const lines: string[] = [`## Forums — Course ${courseId}\n`];
+  const lines: string[] = [`## Forums: Course ${courseId}\n`];
   for (const forum of forums.slice(0, FORUM_LIST_POLICY.maxRenderedForums)) {
     const discussionCount = forum.numdiscussions != null ? ` (${forum.numdiscussions} discussions)` : "";
     const idLabel = sealer ? await sealer.seal("forum", forum.id) : forum.id;
-    lines.push(`- **${truncateText(forum.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**${discussionCount} — ID: \`${idLabel}\` (use with moodle_get_forum_discussions)`);
+    lines.push(`- **${truncateText(forum.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**${discussionCount}, ID: \`${idLabel}\` (use with moodle_get_forum_discussions)`);
   }
   if (forums.length > FORUM_LIST_POLICY.maxRenderedForums) {
     lines.push(`\n_Showing the first ${FORUM_LIST_POLICY.maxRenderedForums} forums._`);
@@ -78,7 +78,7 @@ export async function getForumDiscussions(client: MoodleClient, forumId: number)
   const { discussions, omitted } = await getDiscussionPage(client, forumId, 20);
   if (discussions.length === 0) return `No discussions found in forum ${forumId}.`;
 
-  const lines: string[] = [`## Forum ${forumId} — Recent Discussions\n`];
+  const lines: string[] = [`## Forum ${forumId}: Recent Discussions\n`];
 
   for (const d of discussions) {
     const pinned = d.pinned ? " 📌" : "";
@@ -103,7 +103,7 @@ export function registerForumTools(server: McpServer, courseRefResolver: CourseR
 
   server.tool(
     "moodle_get_forum_discussions",
-    "Read recent posts in a course forum — most useful for a course's Announcements forum, to see what the lecturer has posted (title, author, reply count, last activity, and the post body).",
+    "Read recent posts in a course forum: most useful for a course's Announcements forum, to see what the lecturer has posted (title, author, reply count, last activity, and the post body).",
     { forumId: RefSchema.describe("Forum ID from moodle_list_forums (the real forum id, not a course-module id)") },
     async ({ forumId }) => withResolvedRef(courseRefResolver, "forum", forumId, getForumDiscussions),
   );

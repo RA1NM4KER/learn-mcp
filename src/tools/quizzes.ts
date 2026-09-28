@@ -8,7 +8,7 @@ import { truncateText } from "../text.js";
 import { formatMoodleDateTime } from "../format-date.js";
 
 function formatDate(ts: number): string {
-  return ts ? formatMoodleDateTime(ts) : "—";
+  return ts ? formatMoodleDateTime(ts) : "N/A";
 }
 
 function formatDuration(seconds: number): string {
@@ -28,7 +28,7 @@ export async function listQuizzes(client: MoodleClient, courseId: number, sealer
   ]);
 
   const byModule = new Map(quizData.quizzes.map((q) => [q.coursemodule, q]));
-  const lines: string[] = [`## Quizzes — Course ${courseId}\n`];
+  const lines: string[] = [`## Quizzes: Course ${courseId}\n`];
   let hasAny = false;
   let renderedQuizzes = 0;
   let omittedQuizzes = 0;
@@ -76,13 +76,13 @@ export async function getQuizAttempts(client: MoodleClient, quizId: number): Pro
   const attempts = data.attempts ?? [];
   if (attempts.length === 0) return `No attempts found for quiz ${quizId}.`;
 
-  const lines: string[] = [`## Quiz ${quizId} — Your Attempts\n`];
+  const lines: string[] = [`## Quiz ${quizId}: Your Attempts\n`];
   lines.push("| # | State | Started | Finished | Grade |");
   lines.push("|---|-------|---------|----------|-------|");
 
   for (const a of attempts.slice(0, QUIZ_ATTEMPT_POLICY.maxRendered)) {
     const finished = a.timefinish ? formatDate(a.timefinish) : "In progress";
-    const grade = a.sumgrades != null ? String(a.sumgrades) : "—";
+    const grade = a.sumgrades != null ? String(a.sumgrades) : "N/A";
     lines.push(`| ${a.attempt} | ${truncateText(a.state, TEXT_OUTPUT_POLICY.maxLabelCharacters)} | ${formatDate(a.timestart)} | ${finished} | ${grade} |`);
   }
 
@@ -103,7 +103,7 @@ export function registerQuizTools(server: McpServer, courseRefResolver: CourseRe
 
   server.tool(
     "moodle_get_quiz_attempts",
-    "Get the student's own past attempt history for one quiz — grades, states, and timing.",
+    "Get the student's own past attempt history for one quiz: grades, states, and timing.",
     { quizId: RefSchema.describe("Quiz ID from moodle_list_quizzes") },
     async ({ quizId }) => withResolvedRef(courseRefResolver, "quiz", quizId, getQuizAttempts),
   );

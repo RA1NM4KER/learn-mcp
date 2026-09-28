@@ -1,37 +1,37 @@
-// Minimal, honest static legal notices, linked from the connect page's
-// footer. Deliberately plain-language and short — this is a small
-// independent project, not a company with a legal department. Update this
-// copy (contact details, hosting specifics) before any public/production
-// launch; it is not a substitute for real legal review at that point.
+// Legal notices (/terms, /privacy), styled as part of the public marketing
+// site (see src/marketing/*.ts, src/page-shell.ts) rather than the old
+// connect-flow-only shell — these are reachable from the landing page's nav
+// and footer now, not just from /connect. Content is unchanged; only the
+// surrounding shell moved.
+//
+// Deliberately plain-language and short — this is a small independent
+// project, not a company with a legal department. Update this copy (contact
+// details, hosting specifics) before any public/production launch; it is
+// not a substitute for real legal review at that point.
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
-}
+import { MARKETING_CSS, PAGE_SHELL_CSS, renderMarketingFooter, renderMarketingHeader } from "./page-shell.js";
 
-function legalPageShell(title: string, bodyHtml: string): string {
+function legalPageShell(title: string, current: "privacy" | undefined, bodyHtml: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>${escapeHtml(title)} — SUNLearn MCP</title>
+<title>${title}: SUNLearn MCP</title>
 <style>
-  :root { color-scheme: light; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 640px; margin: 0 auto; padding: 40px 20px 60px; line-height: 1.6; color: #1f2430; background: #fff; }
-  h1 { font-size: 1.5rem; margin-bottom: 4px; }
-  h2 { font-size: 1.05rem; margin-top: 28px; }
-  p, li { color: #444d5e; }
-  a { color: #7a2748; }
-  .back { display: inline-block; margin-bottom: 24px; font-size: 0.9rem; }
-  .updated { color: #8a93a6; font-size: 0.85rem; margin-bottom: 24px; }
+${PAGE_SHELL_CSS}
+${MARKETING_CSS}
 </style>
 </head>
-<body>
-  <a class="back" href="/connect">&larr; Back to Connect</a>
-  <h1>${escapeHtml(title)}</h1>
-  <p class="updated">SUNLearn MCP — an independent, unofficial project.</p>
-  ${bodyHtml}
+<body class="mkt">
+  ${renderMarketingHeader(current ? { current } : {})}
+  <main class="mkt-doc-page">
+    <h1>${title}</h1>
+    <p class="mkt-doc-updated">SUNLearn MCP: an independent, unofficial project.</p>
+    ${bodyHtml}
+  </main>
+  ${renderMarketingFooter()}
 </body>
 </html>
 `;
@@ -39,6 +39,7 @@ function legalPageShell(title: string, bodyHtml: string): string {
 
 export const TERMS_HTML = legalPageShell(
   "Terms of Use",
+  undefined,
   `
   <p>SUNLearn MCP is an independent, student-built tool that gives an AI assistant
   read-only access to your own SUNLearn/Moodle courses, on your explicit request.
@@ -74,6 +75,7 @@ export const TERMS_HTML = legalPageShell(
 
 export const PRIVACY_HTML = legalPageShell(
   "Privacy Notice",
+  "privacy",
   `
   <p>This notice explains what SUNLearn MCP stores about you and why.</p>
 
@@ -85,13 +87,13 @@ export const PRIVACY_HTML = legalPageShell(
 
   <h2>What is never stored</h2>
   <ul>
-    <li>Your Stellenbosch/Microsoft password or MFA code — sign-in happens entirely on official Stellenbosch/Microsoft pages, which this tool never sees.</li>
-    <li>Your course content itself — it is fetched live from Moodle for each request, not kept in a separate copy.</li>
+    <li>Your Stellenbosch/Microsoft password or MFA code: sign-in happens entirely on official Stellenbosch/Microsoft pages, which this tool never sees.</li>
+    <li>Your course content itself: it is fetched live from Moodle for each request, not kept in a separate copy.</li>
   </ul>
 
   <h2>How it's used</h2>
   <p>Solely to answer your assistant's requests about your own enrolled courses,
-  deadlines, grades, files, and forum posts — read-only, on your behalf, when you
+  deadlines, grades, files, and forum posts, read-only, on your behalf, when you
   ask.</p>
 
   <h2>Sharing</h2>

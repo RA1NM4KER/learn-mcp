@@ -38,7 +38,7 @@ export function registerResources(server: McpServer, client: MoodleClient): void
                       uri: `moodle://files/${fileId}`,
                       name: `${truncateText(course.shortname, TEXT_OUTPUT_POLICY.maxLabelCharacters)} / ${truncateText(section.name || "General", TEXT_OUTPUT_POLICY.maxLabelCharacters)} / ${truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}`,
                       mimeType: mime,
-                      description: `${truncateText(course.fullname, TEXT_OUTPUT_POLICY.maxLabelCharacters)} — ${truncateText(section.name || "General", TEXT_OUTPUT_POLICY.maxLabelCharacters)}`,
+                      description: `${truncateText(course.fullname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}, ${truncateText(section.name || "General", TEXT_OUTPUT_POLICY.maxLabelCharacters)}`,
                     });
                   }
                 }

@@ -37,7 +37,7 @@ export async function courseOverview(client: MoodleClient, courseId: number, sea
 
   const courseIdLabel = await sealer.seal("course", course.id);
   const lines: string[] = [
-    `## Course Overview — ${truncateText(course.fullname, TEXT_OUTPUT_POLICY.maxLabelCharacters)} (${truncateText(course.shortname, TEXT_OUTPUT_POLICY.maxLabelCharacters)})`,
+    `## Course Overview: ${truncateText(course.fullname, TEXT_OUTPUT_POLICY.maxLabelCharacters)} (${truncateText(course.shortname, TEXT_OUTPUT_POLICY.maxLabelCharacters)})`,
     `Course ID: \`${courseIdLabel}\``,
   ];
 
@@ -83,7 +83,7 @@ export async function courseOverview(client: MoodleClient, courseId: number, sea
           // a composed tool must never hand out a raw non-anchor assignment id
           // that moodle_get_assignment has no way to route correctly.
           const idLabel = await sealer.seal("assignment", a.id);
-          lines.push(`- **${truncateText(a.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** — due ${formatDate(a.duedate)} (ID: \`${idLabel}\`)`);
+          lines.push(`- **${truncateText(a.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**, due ${formatDate(a.duedate)} (ID: \`${idLabel}\`)`);
         }
         if (upcoming.length > ASSIGNMENT_LIST_POLICY.maxRendered) {
           lines.push(`_Showing the first ${ASSIGNMENT_LIST_POLICY.maxRendered} upcoming assignments._`);
@@ -105,7 +105,7 @@ export async function courseOverview(client: MoodleClient, courseId: number, sea
       const total = items.find((i) => i.itemtype === "course");
       if (total) {
         lines.push(
-          `Course total: ${truncateText(total.gradeformatted, TEXT_OUTPUT_POLICY.maxLabelCharacters)} / ${total.grademax} (${truncateText(total.percentageformatted ?? "—", TEXT_OUTPUT_POLICY.maxLabelCharacters)})`,
+          `Course total: ${truncateText(total.gradeformatted, TEXT_OUTPUT_POLICY.maxLabelCharacters)} / ${total.grademax} (${truncateText(total.percentageformatted ?? "N/A", TEXT_OUTPUT_POLICY.maxLabelCharacters)})`,
         );
       } else {
         lines.push("No course total grade available yet.");
@@ -130,7 +130,7 @@ export async function courseOverview(client: MoodleClient, courseId: number, sea
         lines.push("No recent announcements.");
       } else {
         for (const d of discussions) {
-          lines.push(`- **${truncateText(d.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** — ${truncateText(d.userfullname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}, ${formatDate(d.timemodified)}`);
+          lines.push(`- **${truncateText(d.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**, ${truncateText(d.userfullname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}, ${formatDate(d.timemodified)}`);
         }
       }
     }
@@ -377,7 +377,7 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
     ["overdue", "🔴 Overdue"],
     ["due_soon", "🟡 Due soon (next 3 days)"],
     ["upcoming", "🟢 Upcoming"],
-    ["missed", "⚫ Missed (past cutoff — not submitted)"],
+    ["missed", "⚫ Missed (past cutoff, not submitted)"],
     ["submitted", "🔵 Submitted"],
   ];
   for (const [state, heading] of groups) {
@@ -386,11 +386,11 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
     lines.push(`### ${heading}`);
     for (const t of items) {
       const late = t.submittedLate ? " (submitted late)" : "";
-      const submission = t.submissionStatus ? ` — ${truncateText(t.submissionStatus, TEXT_OUTPUT_POLICY.maxLabelCharacters)}${late}` : "";
+      const submission = t.submissionStatus ? `, ${truncateText(t.submissionStatus, TEXT_OUTPUT_POLICY.maxLabelCharacters)}${late}` : "";
       const grading = t.gradingStatus ? `, grading: ${truncateText(t.gradingStatus, TEXT_OUTPUT_POLICY.maxLabelCharacters)}` : "";
-      const siteLabel = showSite ? ` — _${truncateText(t.site.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}_` : "";
+      const siteLabel = showSite ? `, _${truncateText(t.site.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}_` : "";
       lines.push(
-        `- **${t.title}** (${t.courseName})${siteLabel} — due ${t.dueDateFormatted}${submission}${grading} — assignment ID: \`${t.assignmentIdLabel}\`, course ID: \`${t.courseIdLabel}\``,
+        `- **${t.title}** (${t.courseName})${siteLabel}, due ${t.dueDateFormatted}${submission}${grading}, assignment ID: \`${t.assignmentIdLabel}\`, course ID: \`${t.courseIdLabel}\``,
       );
     }
     lines.push("");
@@ -399,13 +399,13 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
   if (historicalItems.length > 0) {
     lines.push("### 🗄️ Historical course content");
     lines.push(
-      "_These due dates fall before their own course's start date — almost certainly content inherited from a reused/reset course shell, not current obligations. Verify with your lecturer if unsure._",
+      "_These due dates fall before their own course's start date, almost certainly content inherited from a reused/reset course shell, not current obligations. Verify with your lecturer if unsure._",
       "",
     );
     for (const h of historicalItems) {
-      const siteLabel = showSite ? ` — _${truncateText(h.site.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}_` : "";
+      const siteLabel = showSite ? `, _${truncateText(h.site.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}_` : "";
       lines.push(
-        `- **${h.title}** (${h.courseName})${siteLabel} — due ${h.dueDateFormatted} — assignment ID: \`${h.assignmentIdLabel}\`, course ID: \`${h.courseIdLabel}\``,
+        `- **${h.title}** (${h.courseName})${siteLabel}, due ${h.dueDateFormatted}, assignment ID: \`${h.assignmentIdLabel}\`, course ID: \`${h.courseIdLabel}\``,
       );
     }
     if (omittedHistorical) lines.push(`_Showing the ${COMPOSED_TASK_POLICY.maxHistoricalRendered} most recent historical items; ${omittedHistorical} more were omitted._`);

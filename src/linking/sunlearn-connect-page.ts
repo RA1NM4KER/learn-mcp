@@ -137,7 +137,7 @@ function sitePanel(panel: SitePanel, sessionId: string, isAutoOpen: boolean, err
       <div class="form-actions"><button type="submit">Connect ${escapeHtml(panel.siteName)}</button></div>
     </form>
 
-    <p class="muted">If you don't have an account on this environment, that's fine — just come back and connect the ones you use.</p>
+    <p class="muted">If you don't have an account on this environment, that's fine. Just come back and connect the ones you use.</p>
   </dialog>`;
 }
 
@@ -168,7 +168,7 @@ export function renderSunlearnConnectPage(options: RenderConnectPageOptions): st
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>Connect your SUNLearn courses — SUNLearn MCP</title>
+<title>Connect your SUNLearn courses: SUNLearn MCP</title>
 <style>
 ${PAGE_SHELL_CSS}
   .sites-list { padding: 4px 0; margin: 0 0 24px; }

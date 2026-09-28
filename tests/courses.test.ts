@@ -143,7 +143,7 @@ describe("listCourses", () => {
 
     const result = await listCourses(client);
     expect(result).toContain("## Your Courses");
-    expect(result).toContain("**Geology 101** (GEO101) — ID: `1`");
+    expect(result).toContain("**Geology 101** (GEO101), ID: `1`");
     expect(result).not.toContain("_STEMLearn_");
   });
 
@@ -195,8 +195,8 @@ describe("listCourses", () => {
     );
 
     const result = await listCourses(client, multiSite(["emslearn"]));
-    expect(result).toContain("**Geology 101** (GEO101) — _STEMLearn_ — ID: `1`");
-    expect(result).toContain("**Accounting 101** (ACC101) — _EMSLearn_ — ID: `sealed-emslearn-1`");
+    expect(result).toContain("**Geology 101** (GEO101), _STEMLearn_, ID: `1`");
+    expect(result).toContain("**Accounting 101** (ACC101), _EMSLearn_, ID: `sealed-emslearn-1`");
     // Same numeric Moodle courseId (1) on two different sites must render with distinct IDs.
     expect(result.match(/ID: `1`/g)).toHaveLength(1);
   });

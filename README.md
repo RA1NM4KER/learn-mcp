@@ -27,17 +27,17 @@ claude mcp add sunlearn -- node /absolute/path/to/sunlearn-mcp/dist/server.js
 This repository supports two deployment modes, both built from the same
 `createSunLearnServer(client)` registration:
 
-- **Local (stdio)** — `src/server.ts`, using the local credential model above
+- **Local (stdio)**: `src/server.ts`, using the local credential model above
   (`.auth/token.json` or `MOODLE_URL`/`MOODLE_TOKEN` env vars). This remains
   the primary supported mode.
-- **Remote (Cloudflare Worker, Streamable HTTP)** — `src/worker.ts`, exposing
+- **Remote (Cloudflare Worker, Streamable HTTP)**: `src/worker.ts`, exposing
   `POST /mcp` and `GET /health`. `/mcp` is now **OAuth 2.1-protected**
   (authorization code + PKCE S256, via `@cloudflare/workers-oauth-provider`):
   a standards-compliant MCP client discovers `/.well-known/oauth-protected-resource/mcp`
   and `/.well-known/oauth-authorization-server`, registers via Dynamic Client
   Registration (`/oauth/register`) or a Client ID Metadata Document, and
-  completes `/authorize` — which runs the SUNLearn account-linking flow as
-  its authentication step — before receiving a token scoped to `stemlearn:read`
+  completes `/authorize`, which runs the SUNLearn account-linking flow as
+  its authentication step, before receiving a token scoped to `stemlearn:read`
   (+ optional `offline_access` for refresh tokens). A legacy static-bearer
   lane (`Authorization: Bearer <MCP_ACCESS_TOKEN>`, constant-time compared)
   is preserved alongside it during migration, resolving only the original
@@ -48,22 +48,27 @@ This repository supports two deployment modes, both built from the same
   `MOODLE_MCP_REQUEST_TIMEOUT_MS`. Requires a D1 database bound as `DB`
   (`wrangler.toml`, `migrations/*.sql`) and a KV namespace bound as
   `OAUTH_KV` (used only by the OAuth provider library for its own
-  codes/tokens/clients/grants — separate from our D1 linking data). Deploy
+  codes/tokens/clients/grants, separate from our D1 linking data). Deploy
   with `npm run deploy` (`wrangler deploy`).
 
-### Account linking (SUNLearn → remote MCP)
+### Account linking (SUNLearn to remote MCP)
 
-`GET /connect` serves a 3-step page (sign in → copy connection link → paste
-connection link) that lets a student link their own SUNLearn account without
-ever giving this app their Stellenbosch/Microsoft password: they authenticate
-entirely on official SU/Microsoft pages, then paste back the resulting
-connection link. The link is verified (including a live
-`core_webservice_get_site_info` call) before anything is persisted, and the
-resulting Moodle token is stored AES-256-GCM-encrypted in D1, never in
-plaintext. See `src/linking/*` and `AGENTS.md` for the design and its
-current, explicitly single-user limitations — linking does not yet mean
-multi-user or student-ready; every linked credential resolves to one fixed
-identity until real OAuth identity is added.
+The real student-facing linking screen (3 steps: sign in, copy connection
+link, paste connection link) is served as part of the OAuth `/authorize`
+flow (`src/oauth/routes.ts`, `src/linking/sunlearn-connect-page.ts`) when an
+MCP client initiates authorization, not as a standalone page. It lets a
+student link their own SUNLearn account without ever giving this app their
+Stellenbosch/Microsoft password: they authenticate entirely on official
+SU/Microsoft pages, then paste back the resulting connection link. The link
+is verified (including a live `core_webservice_get_site_info` call) before
+anything is persisted, and the resulting Moodle token is stored
+AES-256-GCM-encrypted in D1, never in plaintext. (`GET /connect` is a
+separate, bearer-key-gated developer testing page for this deployment's
+single maintainer, not the student flow; see `src/linking/connect-page.ts`.)
+See `src/linking/*` and `AGENTS.md` for the design and its current,
+explicitly single-user limitations: linking does not yet mean multi-user or
+student-ready, and every linked credential resolves to one fixed identity
+until real OAuth identity is added.
 
 ### Continuous deployment
 

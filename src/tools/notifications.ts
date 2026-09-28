@@ -69,7 +69,7 @@ export async function getNotificationsAccountWide(
   }
 
   const lines: string[] = [`## Notifications (${totalUnread} unread)\n`, ...notes];
-  for (const { site, n } of capped) lines.push(...renderNotification(n, ` — _${truncateText(site.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}_`));
+  for (const { site, n } of capped) lines.push(...renderNotification(n, `, _${truncateText(site.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}_`));
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 

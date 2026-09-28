@@ -40,7 +40,7 @@ export const CONNECT_PAGE_HTML = `<!DOCTYPE html>
 </head>
 <body>
   <h1>Connect SUNLearn (developer)</h1>
-  <p>This page is private, single-user developer testing for this deployment — not the real student sign-in
+  <p>This page is private, single-user developer testing for this deployment, not the real student sign-in
   flow (that's part of the OAuth /authorize flow).</p>
 
   <div class="step">
