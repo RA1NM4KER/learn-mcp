@@ -118,3 +118,29 @@ export async function deleteCredential(db: D1Database, userId: string, siteBaseU
   const baseUrl = assertAllowedMoodleBaseUrl(siteBaseUrl);
   await db.prepare("DELETE FROM moodle_credentials WHERE user_id = ? AND moodle_base_url = ?").bind(userId, baseUrl).run();
 }
+
+/** How many sites this user currently has a stored credential for. */
+export async function countCredentials(db: D1Database, userId: string): Promise<number> {
+  const { results } = await db.prepare("SELECT moodle_base_url FROM moodle_credentials WHERE user_id = ?").bind(userId).all<CredentialRow>();
+  return results.length;
+}
+
+/**
+ * Deletes every credential AND every identity-alias row (moodle_identity_aliases,
+ * migrations/0004_canonical_identity.sql) this canonical user owns — the
+ * complete "delete my Learn MCP data" operation (distinct from
+ * deleteCredential's single-site "disconnect"), scoped to exactly this one
+ * canonical_user_id by construction (every query below filters on it), so it
+ * can never touch another person's rows. Idempotent: deleting an
+ * already-empty account is a no-op, not an error.
+ *
+ * This does NOT revoke any OAuth grant already issued to an AI-assistant
+ * connector (that's the @cloudflare/workers-oauth-provider library's own
+ * KV-backed grant store, a separate system from the D1 rows this codebase
+ * owns) — see the privacy notice for the accurate, narrower guarantee this
+ * operation actually provides.
+ */
+export async function deleteAllUserData(db: D1Database, userId: string): Promise<void> {
+  await db.prepare("DELETE FROM moodle_credentials WHERE user_id = ?").bind(userId).run();
+  await db.prepare("DELETE FROM moodle_identity_aliases WHERE canonical_user_id = ?").bind(userId).run();
+}

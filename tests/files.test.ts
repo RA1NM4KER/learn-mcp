@@ -127,6 +127,22 @@ describe("moodle_list_resources", () => {
     expect(() => schemas.get("moodle_list_resources")!.limit!.parse(101)).toThrow();
   });
 
+  it("with content retrieval disabled, still lists file names/sizes but mints no fileId and says so", async () => {
+    const client = await makeClient();
+    const { server, handlers } = captureTool();
+    registerFileTools(server as never, createAnchorOnlyResolver(client), false);
+
+    mockFetch.mockResolvedValueOnce(mockOkJson(MANY_FILES_COURSE));
+    const result = (await handlers.get("moodle_list_resources")!({ courseId: 2722 })) as { content: { text: string }[] };
+    const text = result.content[0].text;
+
+    expect(text).toContain("Lecture 1.pdf");
+    expect(text).toContain("Practical 2.pdf");
+    expect(text).not.toContain("fileId:");
+    expect(text).not.toContain("moodle://files/f_");
+    expect(text).toContain("not currently available");
+  });
+
   it("applies its global cap to links and folders as well as files", async () => {
     const client = await makeClient();
     const { server, handlers } = captureTool();

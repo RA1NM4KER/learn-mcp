@@ -126,7 +126,12 @@ export async function handleMcpRequest(
       : await resolveMoodleConfigForOAuthUser(userId, env);
     const client = await MoodleClient.create(config);
     const { resolver, multiSite } = await buildCourseContext(userId, client, config.baseUrl, env);
-    const server = createSunLearnServer(client, resolver, multiSite);
+    // Anything other than the literal "false" keeps today's behavior
+    // (content retrieval enabled) — this flag exists to let us turn full
+    // file-content access off quickly in response to future guidance, not to
+    // default to a locked-down state.
+    const contentEnabled = env.REMOTE_COURSE_CONTENT_ENABLED !== "false";
+    const server = createSunLearnServer(client, resolver, multiSite, contentEnabled);
     // Stateless (no sessionIdGenerator) + JSON response mode: each request is
     // handled by a fresh transport/client, and the JSON-RPC response comes
     // back as a normal application/json body instead of an SSE stream — this

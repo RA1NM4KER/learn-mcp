@@ -1,5 +1,6 @@
 import type { ConsentDescription } from "./describe-consent.js";
 import { PAGE_SHELL_CSS, renderBrandHeader, renderLegalFooter } from "../page-shell.js";
+import { PRODUCT_NAME } from "../brand.js";
 
 // Plain-language permission categories for scopes we currently grant. No raw
 // scope strings, no OAuth jargon, no tokens, no protocol internals — per the
@@ -36,7 +37,7 @@ export function renderConsentPage(details: ConsentDescription, handle: string, l
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>Connect SUNLearn: SUNLearn MCP</title>
+<title>Connect SUNLearn: ${PRODUCT_NAME}</title>
 <style>
 ${PAGE_SHELL_CSS}
   .card { padding: 28px 30px; margin-bottom: 24px; }

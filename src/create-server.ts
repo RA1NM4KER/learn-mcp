@@ -6,10 +6,15 @@ import type { CourseRefResolver } from "./course-ref-resolver.js";
 import { registerResources } from "./resources/index.js";
 import { registerPrompts } from "./prompts/index.js";
 
-export const SUNLEARN_SERVER_INFO = { name: "sunlearn-mcp", version: "0.1.0" } as const;
+// "learn-mcp" is the MCP protocol's self-reported server name/version (what
+// an MCP client shows during initialize) — pure presentation, like a
+// User-Agent string. Unlike DEFAULT_USER_ID, deriveStemlearnUserId, or any
+// AAD/HKDF namespace, nothing cryptographic or storage-keyed depends on this
+// exact string, so it renames freely with the rest of the public brand.
+export const LEARN_MCP_SERVER_INFO = { name: "learn-mcp", version: "0.1.0" } as const;
 
 /**
- * Build the transport-independent SUNLearn MCP surface. `client` is always
+ * Build the transport-independent Learn MCP surface. `client` is always
  * this request's single anchor-site MoodleClient. `courseRefResolver` is
  * what every course/assignment/quiz/forum-SCOPED tool uses instead,
  * dispatching a legacy plain numeric id or a sealed multi-site reference to
@@ -19,16 +24,20 @@ export const SUNLEARN_SERVER_INFO = { name: "sunlearn-mcp", version: "0.1.0" } a
  * code path regardless of deployment. `multiSite`, when provided, is what
  * every ACCOUNT-WIDE tool (course listing, cross-course deadlines,
  * notifications) uses to additionally fan out across every other connected
- * SUNLearn site (see multi-site-context.ts).
+ * SUNLearn site (see multi-site-context.ts). `contentEnabled` (default true;
+ * the remote Worker passes REMOTE_COURSE_CONTENT_ENABLED) independently gates
+ * full file-content retrieval (moodle_download_file, the moodle://files/*
+ * resource) without touching any course-metadata tool.
  */
 export function createSunLearnServer(
   client: MoodleClient,
   courseRefResolver: CourseRefResolver,
   multiSite?: MultiSiteContext,
+  contentEnabled = true,
 ): McpServer {
-  const server = new McpServer(SUNLEARN_SERVER_INFO);
-  registerAllTools(server, client, courseRefResolver, multiSite);
-  registerResources(server, client);
+  const server = new McpServer(LEARN_MCP_SERVER_INFO);
+  registerAllTools(server, client, courseRefResolver, multiSite, contentEnabled);
+  registerResources(server, client, contentEnabled);
   registerPrompts(server);
   return server;
 }

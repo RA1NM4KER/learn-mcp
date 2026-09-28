@@ -1,13 +1,12 @@
 {
   "manifest_version": "0.3",
-  "name": "sunlearn-mcp",
-  "display_name": "SUNLearn MCP",
+  "name": "learn-mcp",
+  "display_name": "Learn MCP",
   "version": "0.1.0",
-  "description": "Read-only local MCP server for SUNLearn Moodle students.",
+  "description": "Read-only local MCP server for Moodle-based learning platforms (SUNLearn, STEMLearn and similar Stellenbosch University environments).",
   "long_description": "Runs locally over stdio using the token created by npm run auth. Provides read-only access to enrolled courses, course materials, deadlines, grades, forums, and notifications.",
-  "author": { "name": "SUNLearn" },
   "license": "MIT",
-  "keywords": ["sunlearn", "moodle", "mcp", "education"],
+  "keywords": ["moodle", "mcp", "education", "sunlearn", "stemlearn"],
   "server": {
     "type": "node",
     "entry_point": "dist/server.js",

@@ -1,10 +1,10 @@
 {
-  "name": "sunlearn-mcp",
+  "name": "learn-mcp",
   "version": "0.1.0",
-  "description": "Read-only local MCP server for SUNLearn Moodle students.",
+  "description": "Read-only local MCP server for Moodle-based learning platforms (SUNLearn, STEMLearn and similar Stellenbosch University environments).",
   "type": "module",
   "bin": {
-    "sunlearn-mcp": "./dist/server.js"
+    "learn-mcp": "./dist/server.js"
   },
   "files": [
     "dist",

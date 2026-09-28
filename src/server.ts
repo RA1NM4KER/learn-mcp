@@ -4,12 +4,13 @@ import { getConfig, loadTokenFile } from "./config.js";
 import { MoodleClient } from "./moodle-client.js";
 import { createSunLearnServer } from "./create-server.js";
 import { createAnchorOnlyResolver } from "./course-ref-resolver.js";
+import { PRODUCT_NAME } from "./brand.js";
 
 const isConfigured = Boolean(process.env.MOODLE_URL || loadTokenFile());
 
 if (process.stdin.isTTY && !isConfigured) {
   console.log(`
-sunlearn-mcp v0.1.0: SUNLearn (Moodle) MCP Server
+${PRODUCT_NAME} v0.1.0: Moodle MCP Server
 
 This tool runs as a background server for an MCP client (e.g. Claude Code);
 you don't run it directly by hand.
@@ -24,14 +25,14 @@ saves a token to .auth/token.json. No credentials are pasted anywhere.
 No env vars needed. The server reads .auth/token.json automatically.
 
 Claude Code:
-  claude mcp add sunlearn -- node ${process.cwd()}/dist/server.js
+  claude mcp add learn -- node ${process.cwd()}/dist/server.js
 
 Claude Desktop config file:
   Mac:     ~/Library/Application Support/Claude/claude_desktop_config.json
   Windows: %APPDATA%\\Claude\\claude_desktop_config.json
 
   "mcpServers": {
-    "sunlearn": {
+    "learn": {
       "command": "node",
       "args": ["${process.cwd()}/dist/server.js"]
     }
@@ -54,6 +55,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Failed to start SUNLearn MCP:", err.message);
+  console.error(`Failed to start ${PRODUCT_NAME}:`, err.message);
   process.exit(1);
 });

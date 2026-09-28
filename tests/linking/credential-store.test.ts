@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FakeD1 } from "./fakes/d1.js";
 import { randomKeyB64Url } from "./fakes/key.js";
-import { D1CredentialResolver, deleteCredential, saveCredential } from "../../src/linking/credential-store.js";
+import { countCredentials, D1CredentialResolver, deleteAllUserData, deleteCredential, saveCredential } from "../../src/linking/credential-store.js";
 import { importCredentialKey } from "../../src/linking/credential-crypto.js";
 
 const STEM = "https://stemlearn.sun.ac.za";
@@ -149,6 +149,62 @@ describe("D1CredentialResolver / saveCredential / deleteCredential", () => {
       const resolver = new D1CredentialResolver(db, () => importCredentialKey(keyB64));
       const anchor = await resolver.resolveAnchor("user1");
       expect(anchor).toEqual({ baseUrl: STEM, credential: { token: "stem-token-v2" } });
+    });
+  });
+
+  describe("countCredentials", () => {
+    it("counts every site a user has linked", async () => {
+      const db = new FakeD1();
+      const key = await importCredentialKey(randomKeyB64Url());
+      await saveCredential(db, key, "user1", STEM, "stem-token");
+      await saveCredential(db, key, "user1", SUN, "sun-token");
+      expect(await countCredentials(db, "user1")).toBe(2);
+      expect(await countCredentials(db, "user2")).toBe(0);
+    });
+  });
+
+  describe("deleteAllUserData", () => {
+    it("deletes every credential across every linked site for that user", async () => {
+      const db = new FakeD1();
+      const key = await importCredentialKey(randomKeyB64Url());
+      await saveCredential(db, key, "user1", STEM, "stem-token");
+      await saveCredential(db, key, "user1", SUN, "sun-token");
+
+      await deleteAllUserData(db, "user1");
+
+      expect(await countCredentials(db, "user1")).toBe(0);
+    });
+
+    it("deletes every identity-alias row for that canonical user, across every linked site", async () => {
+      const db = new FakeD1();
+      db.aliases.set(STEM + "\u00000", { moodle_base_url: STEM, moodle_user_id: 0, canonical_user_id: "user1", created_at: 1 });
+      db.aliases.set(SUN + "\u00001", { moodle_base_url: SUN, moodle_user_id: 1, canonical_user_id: "user1", created_at: 2 });
+
+      await deleteAllUserData(db, "user1");
+
+      expect(db.aliases.size).toBe(0);
+    });
+
+    it("never touches another user's credentials or identity aliases", async () => {
+      const db = new FakeD1();
+      const key = await importCredentialKey(randomKeyB64Url());
+      await saveCredential(db, key, "user1", STEM, "user1-token");
+      await saveCredential(db, key, "user2", STEM, "user2-token");
+      db.aliases.set(STEM + "\u000010", { moodle_base_url: STEM, moodle_user_id: 10, canonical_user_id: "user1", created_at: 1 });
+      db.aliases.set(STEM + "\u000020", { moodle_base_url: STEM, moodle_user_id: 20, canonical_user_id: "user2", created_at: 2 });
+
+      await deleteAllUserData(db, "user1");
+
+      expect(await countCredentials(db, "user1")).toBe(0);
+      expect(await countCredentials(db, "user2")).toBe(1);
+      expect(db.aliases.size).toBe(1);
+      expect([...db.aliases.values()][0]!.canonical_user_id).toBe("user2");
+    });
+
+    it("is idempotent: deleting an already-empty account is a safe no-op", async () => {
+      const db = new FakeD1();
+      await expect(deleteAllUserData(db, "never-existed")).resolves.not.toThrow();
+      await expect(deleteAllUserData(db, "never-existed")).resolves.not.toThrow();
     });
   });
 });

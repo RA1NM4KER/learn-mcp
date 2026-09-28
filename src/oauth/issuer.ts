@@ -5,6 +5,16 @@
 // current canonical domain — the same pattern used for the original
 // workers.dev -> stemlearn-mcp.kefas.co.za migration, extended for the
 // sunlearn-mcp rebrand (stemlearn-mcp.kefas.co.za -> sunlearn-mcp.kefas.co.za).
+//
+// learnmcp.kefas.co.za (src/brand.ts's MCP_ENDPOINT_URL, and now a route in
+// wrangler.toml) is the intended next canonical domain for the Learn MCP
+// rebrand, but is NOT YET provisioned/live as a Cloudflare custom domain —
+// that requires a deploy, deliberately left for the user to trigger once
+// they've verified DNS/SSL for it. Do not make it PRIMARY_ISSUER_URL until
+// then: a not-yet-reachable primary issuer would break every new OAuth
+// registration from the moment this deploys. Once it's confirmed live,
+// promote it to PRIMARY_ISSUER_URL and move sunlearn-mcp.kefas.co.za down
+// into LEGACY_ISSUER_URLS, following this same pattern.
 
 export const PRIMARY_ISSUER_URL = "https://sunlearn-mcp.kefas.co.za";
 

@@ -10,6 +10,7 @@
 // not a substitute for real legal review at that point.
 
 import { MARKETING_CSS, PAGE_SHELL_CSS, renderMarketingFooter, renderMarketingHeader } from "./page-shell.js";
+import { PRODUCT_NAME } from "./brand.js";
 
 function legalPageShell(title: string, current: "privacy" | undefined, bodyHtml: string): string {
   return `<!DOCTYPE html>
@@ -18,7 +19,7 @@ function legalPageShell(title: string, current: "privacy" | undefined, bodyHtml:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>${title}: SUNLearn MCP</title>
+<title>${title}: ${PRODUCT_NAME}</title>
 <style>
 ${PAGE_SHELL_CSS}
 ${MARKETING_CSS}
@@ -28,7 +29,7 @@ ${MARKETING_CSS}
   ${renderMarketingHeader(current ? { current } : {})}
   <main class="mkt-doc-page">
     <h1>${title}</h1>
-    <p class="mkt-doc-updated">SUNLearn MCP: an independent, unofficial project.</p>
+    <p class="mkt-doc-updated">${PRODUCT_NAME}: an independent, unofficial project.</p>
     ${bodyHtml}
   </main>
   ${renderMarketingFooter()}
@@ -41,8 +42,9 @@ export const TERMS_HTML = legalPageShell(
   "Terms of Use",
   undefined,
   `
-  <p>SUNLearn MCP is an independent, student-built tool that gives an AI assistant
-  read-only access to your own SUNLearn/Moodle courses, on your explicit request.
+  <p>${PRODUCT_NAME} is an independent, student-built tool that gives an AI assistant
+  read-only access to your own Moodle-based courses (SUNLearn, STEMLearn, and similar
+  Stellenbosch University learning environments), on your explicit request.
   It is <strong>not an official Stellenbosch University service</strong> and is not
   operated, reviewed, or endorsed by the University.</p>
 
@@ -63,9 +65,8 @@ export const TERMS_HTML = legalPageShell(
   verified against the official Moodle site or your lecturer when it matters.</p>
 
   <h2>Revoking access</h2>
-  <p>You can disconnect any site at any time from the Connect page, and you can
-  revoke this application's access entirely from your Microsoft/Stellenbosch
-  account's own security settings.</p>
+  <p>You can disconnect any individual site, or delete all of your ${PRODUCT_NAME} data
+  outright, at any time from the Connect page. Both actions take effect immediately.</p>
 
   <h2>Changes</h2>
   <p>These terms may change as the project evolves. Continued use after a change
@@ -77,32 +78,43 @@ export const PRIVACY_HTML = legalPageShell(
   "Privacy Notice",
   "privacy",
   `
-  <p>This notice explains what SUNLearn MCP stores about you and why.</p>
+  <p>This notice explains exactly what ${PRODUCT_NAME} stores about you, what it only
+  ever reads live and never stores, and why.</p>
 
   <h2>What is stored</h2>
   <ul>
-    <li>One encrypted access token per SUNLearn site you choose to connect (AES-256-GCM, at rest). This is what lets the tool read your courses on your behalf.</li>
-    <li>An internal, opaque account identifier used to keep your connected sites linked together.</li>
+    <li>Your Moodle user id and the address (origin) of each Moodle site you connect, for example SUNLearn or STEMLearn.</li>
+    <li>An internal, opaque canonical account identifier that links your connected sites together as one account.</li>
+    <li>One encrypted access token per site you choose to connect (AES-256-GCM, at rest). This is what lets the tool read your courses on your behalf.</li>
   </ul>
 
-  <h2>What is never stored</h2>
+  <h2>What is only ever fetched live, never stored</h2>
   <ul>
-    <li>Your Stellenbosch/Microsoft password or MFA code: sign-in happens entirely on official Stellenbosch/Microsoft pages, which this tool never sees.</li>
-    <li>Your course content itself: it is fetched live from Moodle for each request, not kept in a separate copy.</li>
+    <li>Your course content: courses, assignments, grades, files, announcements, forum posts, and calendar events are fetched from Moodle fresh for each request, not kept in a separate copy.</li>
+  </ul>
+
+  <h2>What is never stored or seen</h2>
+  <ul>
+    <li>Your Stellenbosch/Microsoft password or MFA code. Sign-in happens entirely on official Stellenbosch/Microsoft pages, which ${PRODUCT_NAME} never sees.</li>
   </ul>
 
   <h2>How it's used</h2>
-  <p>Solely to answer your assistant's requests about your own enrolled courses,
-  deadlines, grades, files, and forum posts, read-only, on your behalf, when you
+  <p>Solely to answer your AI assistant's requests about your own enrolled courses,
+  deadlines, grades, files, and announcements, read-only, on your behalf, when you
   ask.</p>
 
-  <h2>Sharing</h2>
-  <p>Nothing is sold or shared with third parties. Data is not used for
-  advertising or analytics.</p>
+  <h2>Sharing with AI providers</h2>
+  <p>${PRODUCT_NAME} is not sold to, and does not share data with, advertisers or data
+  brokers. When you ask a question through an AI assistant such as ChatGPT or Claude,
+  the course information needed to answer it is returned to that assistant so it can
+  respond to you. What that provider does with it afterward is governed by your own
+  account settings and that provider's own terms, not by ${PRODUCT_NAME}.</p>
 
   <h2>Deleting your data</h2>
-  <p>Disconnecting a site from the Connect page removes that site's stored
-  credential immediately. Revoking access from your Microsoft account settings
-  achieves the same thing from your side.</p>
+  <p>From the Connect page, you can:</p>
+  <ul>
+    <li><strong>Disconnect a single site</strong>: immediately removes that site's stored credential, while leaving any other connected sites untouched.</li>
+    <li><strong>Delete all my ${PRODUCT_NAME} data</strong>: immediately removes every stored credential and account identifier for your account, across every connected site.</li>
+  </ul>
   `,
 );

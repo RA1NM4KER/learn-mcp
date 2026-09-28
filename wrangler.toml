@@ -13,6 +13,10 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 workers_dev = true
 
 [[routes]]
+pattern = "learnmcp.kefas.co.za"
+custom_domain = true
+
+[[routes]]
 pattern = "sunlearn-mcp.kefas.co.za"
 custom_domain = true
 

@@ -28,6 +28,7 @@
 // device's dark-mode preference.
 
 import { PAGE_SHELL_CSS, renderBrandHeader, renderLegalFooter } from "../page-shell.js";
+import { PRODUCT_NAME } from "../brand.js";
 
 export interface ConnectSiteStatus {
   id: string;
@@ -61,6 +62,14 @@ export interface RenderConnectPageOptions {
    * since there's no known account yet to disconnect anything from.
    */
   disconnectFormAction?: string;
+  /**
+   * Shows a "Delete all my data" action below the site list — removes every
+   * linked site's credential AND this identity's alias rows in one operation
+   * (src/linking/credential-store.ts's deleteAllUserData), not just one
+   * site's disconnect. Same "only once a real identity is known" guard as
+   * disconnectFormAction.
+   */
+  deleteDataFormAction?: string;
 }
 
 function escapeHtml(value: string): string {
@@ -162,13 +171,20 @@ export function renderSunlearnConnectPage(options: RenderConnectPageOptions): st
   </form>`
     : "";
 
+  const deleteDataPanel = options.deleteDataFormAction
+    ? `<form method="post" action="${escapeHtml(options.deleteDataFormAction)}" class="delete-data-form" onsubmit="return confirm('Delete every site you\\'ve connected and all Learn MCP data for this account? This cannot be undone.');">
+    <input type="hidden" name="sessionId" value="${escapeHtml(options.sessionId)}">
+    <button type="submit" class="btn btn-ghost btn-sm delete-data-button">Delete all my Learn MCP data</button>
+  </form>`
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>Connect your SUNLearn courses: SUNLearn MCP</title>
+<title>Connect your SUNLearn courses: ${PRODUCT_NAME}</title>
 <style>
 ${PAGE_SHELL_CSS}
   .sites-list { padding: 4px 0; margin: 0 0 24px; }
@@ -184,6 +200,9 @@ ${PAGE_SHELL_CSS}
   a.button-link { display: inline-block; text-decoration: none; }
   .disconnect-form { display: inline-flex; }
   .continue-form { margin-top: 4px; }
+  .delete-data-form { margin-top: 18px; }
+  .delete-data-button { color: var(--destructive); padding-left: 0; }
+  .delete-data-button:hover { background: transparent; text-decoration: underline; }
   .form-actions { margin-top: 14px; }
 
   /* Dialog */
@@ -246,6 +265,7 @@ ${PAGE_SHELL_CSS}
   ${continuePanel}
 
   <p class="muted">Login happens on official Stellenbosch/Microsoft pages. We never receive your university password.</p>
+  ${deleteDataPanel}
   </div>
   ${renderLegalFooter()}
 </body>

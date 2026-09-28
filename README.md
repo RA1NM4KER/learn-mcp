@@ -1,108 +1,145 @@
-# SUNLearn MCP
+# Learn MCP
 
-Read-only local MCP server for a SUNLearn student account. It runs over
-stdio and uses the Moodle permissions already attached to your token.
+Learn MCP is a read-only [MCP](https://modelcontextprotocol.io) server that
+lets an AI assistant (ChatGPT, Claude, or any MCP client) answer questions
+about a student's own Moodle-based courses: courses, assignments, deadlines,
+grades, announcements, calendar events, quizzes, forums, and course files.
 
-## Setup
+It is currently tested against Stellenbosch University's Moodle
+environments (SUNLearn, STEMLearn, EMSLearn, SocSciLearn, FMHSLearn), but
+the codebase is not Stellenbosch-specific: it speaks the standard Moodle web
+service API and works against any Moodle instance reachable by URL and
+token. Learn MCP is an independent student project. It is not operated,
+reviewed, or endorsed by Stellenbosch University or any other institution.
+
+**Status:** the hosted remote server (`sunlearn-mcp.kefas.co.za`) is
+currently in **private preview** (see [Access control](#access-control)
+below). The local stdio mode described below has no such restriction: it
+runs entirely under your own Moodle token.
+
+## Two deployment modes, one MCP server
+
+Both modes register the same tools/resources/prompts via
+`createSunLearnServer()` (`src/create-server.ts`); only the transport and
+identity model differ.
+
+### Local (stdio): primary supported mode
+
+Runs on your own machine over stdio, using a Moodle token you generate
+yourself. No account linking, no OAuth, no multi-user concerns: it is your
+token, on your machine, for your MCP client.
 
 ```bash
 npm install
 npx playwright install chromium
-npm run auth
+npm run auth      # opens your institution's SSO flow, saves .auth/token.json
 npm run build
 ```
 
-`npm run auth` opens the normal SUNLearn SSO flow and saves the resulting
-Moodle token to `.auth/token.json` with restrictive permissions. The server
-loads that file automatically. For CI, `MOODLE_URL` and `MOODLE_TOKEN` are
-also supported; Moodle URLs must be HTTPS except `localhost`, `127.0.0.1`,
-or `::1` development addresses.
+`npm run auth` saves the resulting Moodle token to `.auth/token.json` with
+restrictive file permissions; the server reads it automatically. For CI or
+manual configuration, `MOODLE_URL` and `MOODLE_TOKEN` env vars are also
+supported (Moodle URLs must be HTTPS, except `localhost`/`127.0.0.1`/`::1`
+development addresses).
 
 Register the built server with an MCP client:
 
 ```bash
-claude mcp add sunlearn -- node /absolute/path/to/sunlearn-mcp/dist/server.js
+claude mcp add learn -- node /absolute/path/to/learn-mcp/dist/server.js
 ```
 
-This repository supports two deployment modes, both built from the same
-`createSunLearnServer(client)` registration:
+### Remote (Cloudflare Worker, Streamable HTTP)
 
-- **Local (stdio)**: `src/server.ts`, using the local credential model above
-  (`.auth/token.json` or `MOODLE_URL`/`MOODLE_TOKEN` env vars). This remains
-  the primary supported mode.
-- **Remote (Cloudflare Worker, Streamable HTTP)**: `src/worker.ts`, exposing
-  `POST /mcp` and `GET /health`. `/mcp` is now **OAuth 2.1-protected**
-  (authorization code + PKCE S256, via `@cloudflare/workers-oauth-provider`):
-  a standards-compliant MCP client discovers `/.well-known/oauth-protected-resource/mcp`
-  and `/.well-known/oauth-authorization-server`, registers via Dynamic Client
-  Registration (`/oauth/register`) or a Client ID Metadata Document, and
-  completes `/authorize`, which runs the SUNLearn account-linking flow as
-  its authentication step, before receiving a token scoped to `stemlearn:read`
-  (+ optional `offline_access` for refresh tokens). A legacy static-bearer
-  lane (`Authorization: Bearer <MCP_ACCESS_TOKEN>`, constant-time compared)
-  is preserved alongside it during migration, resolving only the original
-  single fixed identity; the two lanes never share identity semantics.
-  Required secrets: `MOODLE_URL`, `MOODLE_TOKEN`, `MCP_ACCESS_TOKEN`,
-  `CREDENTIAL_ENCRYPTION_KEY` (set with `wrangler secret put <NAME>`);
-  optional non-secret tunables: `MOODLE_MCP_MAX_FILE_MB`,
-  `MOODLE_MCP_REQUEST_TIMEOUT_MS`. Requires a D1 database bound as `DB`
-  (`wrangler.toml`, `migrations/*.sql`) and a KV namespace bound as
-  `OAUTH_KV` (used only by the OAuth provider library for its own
-  codes/tokens/clients/grants, separate from our D1 linking data). Deploy
-  with `npm run deploy` (`wrangler deploy`).
+`src/worker.ts` exposes `POST /mcp` and `GET /health`, protected by
+**OAuth 2.1** (authorization code + PKCE S256, via
+`@cloudflare/workers-oauth-provider`): a standards-compliant MCP client
+discovers `/.well-known/oauth-protected-resource/mcp` and
+`/.well-known/oauth-authorization-server`, registers via Dynamic Client
+Registration (`/oauth/register`) or a Client ID Metadata Document, and
+completes `/authorize`. `/authorize` runs the real student account-linking
+flow as its authentication step: the student signs in on their
+institution's own SU/Microsoft page, then pastes back a resulting
+connection link, which is verified (including a live
+`core_webservice_get_site_info` call) before anything is persisted. The
+Moodle token is stored AES-256-GCM-encrypted in D1, never in plaintext, and
+the tool never returns it, a raw file URL, or a filesystem path to the MCP
+client.
 
-### Account linking (SUNLearn to remote MCP)
+Multi-site identity: each verified (Moodle site, Moodle user id) pair
+resolves to one durable **canonical user id**
+(`src/oauth/canonical-identity.ts`), so a student can link several of their
+institution's Moodle sites (e.g. SUNLearn and STEMLearn) and have them
+aggregated under one MCP account, re-authenticating from any of them later
+without losing that identity. A legacy static-bearer lane
+(`Authorization: Bearer <MCP_ACCESS_TOKEN>`, constant-time compared) is
+preserved alongside OAuth during migration, resolving only a single fixed
+legacy identity; the two lanes are deliberately kept disjoint and never
+share identity semantics (see `src/linking/resolve-config.ts`).
 
-The real student-facing linking screen (3 steps: sign in, copy connection
-link, paste connection link) is served as part of the OAuth `/authorize`
-flow (`src/oauth/routes.ts`, `src/linking/sunlearn-connect-page.ts`) when an
-MCP client initiates authorization, not as a standalone page. It lets a
-student link their own SUNLearn account without ever giving this app their
-Stellenbosch/Microsoft password: they authenticate entirely on official
-SU/Microsoft pages, then paste back the resulting connection link. The link
-is verified (including a live `core_webservice_get_site_info` call) before
-anything is persisted, and the resulting Moodle token is stored
-AES-256-GCM-encrypted in D1, never in plaintext. (`GET /connect` is a
-separate, bearer-key-gated developer testing page for this deployment's
-single maintainer, not the student flow; see `src/linking/connect-page.ts`.)
-See `src/linking/*` and `AGENTS.md` for the design and its current,
-explicitly single-user limitations: linking does not yet mean multi-user or
-student-ready, and every linked credential resolves to one fixed identity
-until real OAuth identity is added.
+From the account-linking page, a student can **disconnect** any one
+connected site, or **delete all of their Learn MCP data** outright (every
+credential and identity record for their account, across every site);
+see `src/linking/credential-store.ts`'s `deleteAllUserData`.
+
+Required secrets (`wrangler secret put <NAME>`): `MOODLE_URL`,
+`MOODLE_TOKEN`, `MCP_ACCESS_TOKEN`, `CREDENTIAL_ENCRYPTION_KEY`. Optional
+tunables: `MOODLE_MCP_MAX_FILE_MB`, `MOODLE_MCP_REQUEST_TIMEOUT_MS`. Requires
+a D1 database bound as `DB` (`wrangler.toml`, `migrations/*.sql`) and a KV
+namespace bound as `OAUTH_KV` (used only by the OAuth provider library for
+its own codes/tokens/clients/grants, separate from our own D1 linking data).
+Deploy with `npm run deploy` (`wrangler deploy`).
+
+#### Access control
+
+Two independent flags gate the remote deployment, both fail closed (missing
+or invalid config is always the more restrictive behavior):
+
+- **`ACCESS_MODE`** (`src/preview-access.ts`): anything other than the
+  literal `"public"` puts the deployment in `private_preview`. In that mode,
+  a brand-new (site, Moodle user id) identity is rejected before any D1 write
+  happens: no credential is persisted, no canonical account is minted, and
+  the student sees a plain "private preview" page instead of an internal
+  error. `PREVIEW_ALLOWED_CANONICAL_USER_IDS` (comma-separated canonical user
+  ids, set as a Worker secret) lists who may onboard during preview; an
+  already-allowed identity keeps working (including linking additional
+  sites) even if the allowlist changes later, since the gate only applies to
+  minting a *new* canonical identity.
+- **`REMOTE_COURSE_CONTENT_ENABLED`** (`src/tools/download.ts`,
+  `src/resources/index.ts`): enabled by default; only the literal `"false"`
+  disables the two higher-risk file/content-retrieval surfaces
+  (`moodle_download_file`, the `moodle://files/{fileId}` resource) without
+  affecting lower-risk metadata tools (courses, assignments, grades,
+  calendar, notifications, `moodle_list_resources` listing). When disabled,
+  the tool/resource is not registered at all, rather than registered and
+  erroring.
 
 ### Continuous deployment
 
-Pushes to `main` run `.github/workflows/deploy.yml`. The workflow installs
-locked dependencies with `npm ci`, builds, tests, performs a minified Wrangler
-dry run, and deploys only when every earlier step succeeds. It can also be run
-manually with GitHub Actions' **Run workflow** control. Pull requests do not
-deploy.
+Pushes to `main` run `.github/workflows/deploy.yml`: install locked
+dependencies with `npm ci`, build, test, a minified Wrangler dry run, then
+deploy only if every earlier step succeeds. It can also be run manually via
+GitHub Actions' **Run workflow** control. Pull requests do not deploy.
 
-Before the first workflow run, add these repository secrets in GitHub under
-**Settings → Secrets and variables → Actions → New repository secret**:
-
-- `CLOUDFLARE_API_TOKEN`: a narrowly scoped Cloudflare API token with the
-  Worker deploy/edit permissions required for this Worker, restricted to the
-  relevant Cloudflare account where possible.
-- `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account ID that contains the
-  `stemlearn-mcp` Worker.
-
-GitHub Actions does not receive Moodle credentials or tokens,
-`CREDENTIAL_ENCRYPTION_KEY`, or `MCP_ACCESS_TOKEN`. Those remain Cloudflare
-Worker secrets configured with `wrangler secret put`; normal code deployments
-continue using the remotely configured values.
+Repository secrets required (GitHub → **Settings → Secrets and variables →
+Actions**): `CLOUDFLARE_API_TOKEN` (narrowly scoped to this Worker's
+deploy/edit permissions) and `CLOUDFLARE_ACCOUNT_ID`. GitHub Actions never
+receives Moodle credentials, `CREDENTIAL_ENCRYPTION_KEY`, or
+`MCP_ACCESS_TOKEN`; those remain Worker secrets set with
+`wrangler secret put`.
 
 ## MCP surface
 
 Tools cover enrolled courses and their structure, files, assignments,
 grades, calendar events, quizzes, forums, notifications, site information,
-and the composed `course_overview` and `upcoming_and_overdue` views.
+and the composed `course_overview` and `upcoming_and_overdue` views (the
+remote deployment aggregates the latter two across every site a student has
+linked).
 
 `moodle_list_resources` returns bounded file listings with an opaque,
 encrypted `fileId` and a matching `moodle://files/{fileId}` URI. Use either
-that URI as an MCP resource or `moodle_download_file`; both paths re-check
-current Moodle access before downloading. File IDs expire after 24 hours and
-are bound to the authenticated user and token.
+that URI as an MCP resource or `moodle_download_file`; both re-check current
+Moodle access before downloading. File IDs expire after 24 hours and are
+bound to the authenticated user and token.
 
 Prompts: `summarize-course`, `whats-due`, `build-study-notes`, `exam-prep`,
 and `search-notes`. Prompts that read files use the URI returned by
@@ -111,7 +148,7 @@ and `search-notes`. Prompts that read files use the URI returned by
 ## Operational limits
 
 Network requests time out after 20 seconds by default; set
-`MOODLE_MCP_REQUEST_TIMEOUT_MS` (1000–120000) to change it. File downloads
+`MOODLE_MCP_REQUEST_TIMEOUT_MS` (1000-120000) to change it. File downloads
 default to 25 MB (`MOODLE_MCP_MAX_FILE_MB`). Listings are bounded (for
 example, 25 files by default and 100 maximum) to avoid oversized MCP
 responses. Rendered Moodle text is also bounded per field; oversized text and

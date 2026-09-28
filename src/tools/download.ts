@@ -6,7 +6,9 @@ import { MoodleTimeoutError } from "../moodle-client.js";
 import { TEXT_OUTPUT_POLICY } from "../policy.js";
 import { truncateText } from "../text.js";
 
-export function registerDownloadTool(server: McpServer, client: MoodleClient): void {
+/** Not registered at all when disabled — see REMOTE_COURSE_CONTENT_ENABLED (oauth/env.ts) — so the MCP tool list itself accurately reflects that full file retrieval is unavailable, not just an error message on call. */
+export function registerDownloadTool(server: McpServer, client: MoodleClient, contentEnabled = true): void {
+  if (!contentEnabled) return;
   server.tool(
     "moodle_download_file",
     "Download a Moodle course file by its opaque fileId (from moodle_list_resources). Returns text for text/JSON/XML files; returns the raw bytes as an embedded resource for binary formats like PDFs, DOCX, images. The server fetches the file, so you never need to fetch Moodle URLs directly.",

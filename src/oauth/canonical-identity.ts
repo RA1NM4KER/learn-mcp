@@ -1,5 +1,6 @@
 import type { D1Database } from "../linking/d1.js";
 import { deriveStemlearnUserId } from "./identity.js";
+import { isPreviewAllowed, type PreviewAccessEnv } from "../preview-access.js";
 
 // Resolves the stable, canonical MCP identity for a student, independent of
 // which SUNLearn site they happen to authenticate through on any given day.
@@ -13,7 +14,13 @@ interface AliasRow {
   canonical_user_id: string;
 }
 
-async function lookupAlias(db: D1Database, normalizedBaseUrl: string, moodleUserId: number): Promise<string | null> {
+/**
+ * Read-only: what canonical identity a (site, Moodle user id) pair WOULD
+ * resolve to, without writing anything — safe to call before a private-
+ * preview access check, since (unlike resolveCanonicalUserId) it never mints
+ * or persists a new alias for an identity that check might go on to reject.
+ */
+export async function lookupAlias(db: D1Database, normalizedBaseUrl: string, moodleUserId: number): Promise<string | null> {
   const row = await db
     .prepare("SELECT canonical_user_id FROM moodle_identity_aliases WHERE moodle_base_url = ? AND moodle_user_id = ?")
     .bind(normalizedBaseUrl, moodleUserId)
@@ -73,4 +80,55 @@ export async function resolveCanonicalUserId(
   const mintedId = await deriveStemlearnUserId(new URL(normalizedBaseUrl).host, moodleUserId);
   await insertAlias(db, normalizedBaseUrl, moodleUserId, mintedId);
   return { ok: true, canonicalUserId: mintedId };
+}
+
+/**
+ * Read-only mirror of resolveCanonicalUserId's resolution order, WITHOUT the
+ * insertAlias side effect on the "brand new identity" path — deriving what id
+ * a (site, Moodle user id) pair WOULD resolve to is a pure hash
+ * (deriveStemlearnUserId), so this never needs to write anything to compute
+ * it. Used by the private-preview gate (src/preview-access.ts) in
+ * oauth/routes.ts to check an identity BEFORE resolveCanonicalUserId would
+ * otherwise mint and persist a new alias for it — a rejected new user must
+ * never get a database row, not even this one.
+ */
+export async function prospectiveCanonicalUserId(
+  db: D1Database,
+  normalizedBaseUrl: string,
+  moodleUserId: number,
+  sessionCanonicalUserId: string | null,
+): Promise<string> {
+  const existingAlias = await lookupAlias(db, normalizedBaseUrl, moodleUserId);
+  if (existingAlias) return existingAlias;
+  if (sessionCanonicalUserId) return sessionCanonicalUserId;
+  return deriveStemlearnUserId(new URL(normalizedBaseUrl).host, moodleUserId);
+}
+
+export type GatedCanonicalIdentityResolution =
+  | { ok: true; canonicalUserId: string }
+  | { ok: false; reason: "identity_conflict" }
+  | { ok: false; reason: "preview_denied" };
+
+/**
+ * Composes prospectiveCanonicalUserId + the private-preview allowlist check +
+ * resolveCanonicalUserId into the exact sequence oauth/routes.ts's
+ * handleAuthorizeLink needs, as ONE function with no dependency on
+ * @cloudflare/workers-oauth-provider — that package's real (non-type)
+ * exports pull in a `cloudflare:workers` import that plain Vitest can't
+ * resolve, which is why oauth/routes.ts itself can't be unit-tested directly
+ * (see mcp-handler.test.ts's comment on the same constraint for
+ * oauth/provider.ts). Extracting the actual access-control DECISION here
+ * keeps it fully covered by ordinary unit tests even though the thin
+ * HTTP-handler wiring around it isn't.
+ */
+export async function resolveCanonicalUserIdWithPreviewGate(
+  db: D1Database,
+  env: PreviewAccessEnv,
+  normalizedBaseUrl: string,
+  moodleUserId: number,
+  sessionCanonicalUserId: string | null,
+): Promise<GatedCanonicalIdentityResolution> {
+  const prospectiveUserId = await prospectiveCanonicalUserId(db, normalizedBaseUrl, moodleUserId, sessionCanonicalUserId);
+  if (!isPreviewAllowed(env, prospectiveUserId)) return { ok: false, reason: "preview_denied" };
+  return resolveCanonicalUserId(db, normalizedBaseUrl, moodleUserId, sessionCanonicalUserId);
 }

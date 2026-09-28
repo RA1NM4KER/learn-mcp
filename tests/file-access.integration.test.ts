@@ -47,6 +47,22 @@ function visibleFile() {
 describe("file MCP integration", () => {
   beforeEach(() => mockFetch.mockReset());
 
+  it("registers neither the download tool nor the file resource when REMOTE_COURSE_CONTENT_ENABLED-style gating is disabled", async () => {
+    const c = await client();
+    let toolRegistered = false;
+    let resourceRegistered = false;
+    const server = {
+      tool: () => { toolRegistered = true; },
+      resource: () => { resourceRegistered = true; },
+      prompt: () => {},
+    };
+    registerDownloadTool(server as never, c, false);
+    registerResources(server as never, c, false);
+
+    expect(toolRegistered).toBe(false);
+    expect(resourceRegistered).toBe(false);
+  });
+
   it("uses the registered opaque resource URI in the prompt workflow", async () => {
     const c = await client();
     const { prompts } = capture(c);

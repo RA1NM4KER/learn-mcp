@@ -22,6 +22,12 @@ export interface Env {
    * secrets — leaving it unset there preserves today's hardcoded value.
    */
   OAUTH_ISSUER_URL_OVERRIDE?: string;
+  /** See src/preview-access.ts. Anything other than the literal "public" fails closed to private_preview. */
+  ACCESS_MODE?: string;
+  /** Comma-separated canonical user ids (see oauth/canonical-identity.ts) allowed to onboard during private preview. Configured as a Worker secret, never in source. */
+  PREVIEW_ALLOWED_CANONICAL_USER_IDS?: string;
+  /** See src/tools/download.ts / src/resources/index.ts. Enabled by default; only the literal "false" disables remote file-content retrieval (course metadata tools are unaffected). */
+  REMOTE_COURSE_CONTENT_ENABLED?: string;
 }
 
 /**

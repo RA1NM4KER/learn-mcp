@@ -7,7 +7,9 @@ import { loadCourseContents, loadEnrolledCourses } from "../moodle-loaders.js";
 import { isMoodleFileContent } from "../moodle-api.js";
 import { truncateText } from "../text.js";
 
-export function registerResources(server: McpServer, client: MoodleClient): void {
+/** Not registered at all when disabled — see REMOTE_COURSE_CONTENT_ENABLED (oauth/env.ts) — this is the same file-content capability as moodle_download_file, just exposed via the MCP resources protocol instead of a tool call. */
+export function registerResources(server: McpServer, client: MoodleClient, contentEnabled = true): void {
+  if (!contentEnabled) return;
   server.resource(
     "moodle-course-files",
     new ResourceTemplate("moodle://files/{fileId}", {

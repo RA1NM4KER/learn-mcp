@@ -6,26 +6,29 @@
 // (src/marketing/*.ts). One token/component set, so every screen actually
 // looks like the same product instead of hand-copied palettes drifting apart.
 
+import { PRODUCT_NAME } from "./brand.js";
+
 export const PAGE_SHELL_CSS = `
   :root {
     color-scheme: light;
     --background: #ffffff; --foreground: #09090b;
     --muted: #f4f4f5; --muted-foreground: #71717a;
     --border: #e4e4e7; --card: #ffffff;
-    --primary: #7a2748; --primary-hover: #5d1d37; --primary-foreground: #fafafa;
+    /* A single, deliberately restrained accent: Learn MCP's own identity,
+       not Stellenbosch's maroon/gold. Used everywhere a brand color is
+       needed; there is no second accent color layered on top of it. */
+    --primary: #1e3a5f; --primary-hover: #16293f; --primary-foreground: #fafafa;
     --secondary: #f4f4f5; --secondary-foreground: #18181b;
     --success: #dcfce7; --success-foreground: #166534;
     --destructive: #ef4444; --destructive-foreground: #fef2f2; --destructive-border: #fecaca;
-    --ring: #7a2748;
+    --ring: #1e3a5f;
     --radius: 0.5rem; --radius-lg: 0.75rem;
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06);
-    /* Marketing-only additions (unused by the transactional connect/consent/legal
-       pages above, so their existing appearance is unaffected). Gold is a
-       deliberately muted, desaturated Stellenbosch gold, never bright or neon,
-       and is used sparingly: a nav underline, a card accent line, nothing more. */
-    --gold: #ab8a4a; --warm-bg: #faf8f5;
-    --maroon-wash: rgb(122 39 72 / 0.04);
+    /* Marketing-only addition (unused by the transactional connect/consent/legal
+       pages above, so their existing layout is unaffected): a subtle warm
+       off-white for alternating sections. */
+    --warm-bg: #faf8f5;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -83,7 +86,7 @@ export const PAGE_SHELL_CSS = `
 
 export function renderBrandHeader(): string {
   return `<header class="site-header">
-    <div class="brand"><span class="brand-name">SUNLearn MCP</span></div>
+    <div class="brand"><span class="brand-name">${PRODUCT_NAME}</span></div>
     <p class="disclaimer">This is an independent, unofficial student project. It is not operated, reviewed, or endorsed by Stellenbosch University.</p>
   </header>`;
 }
@@ -110,14 +113,18 @@ export const MARKETING_CSS = `
   /* Nav */
   .mkt-nav { border-bottom: 1px solid var(--border); position: sticky; top: 0; background: rgb(255 255 255 / 0.86); backdrop-filter: blur(8px); z-index: 20; }
   .mkt-nav-inner { max-width: 1080px; margin: 0 auto; padding: 0 24px; height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-  .mkt-brand { display: flex; align-items: baseline; gap: 6px; text-decoration: none; color: var(--foreground); font-weight: 600; font-size: 1.0625rem; letter-spacing: -0.02em; }
-  .mkt-brand-badge { font-size: 0.6875rem; font-weight: 600; color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; letter-spacing: 0.02em; }
+  .mkt-brand { display: flex; align-items: baseline; text-decoration: none; color: var(--foreground); font-weight: 600; font-size: 1.0625rem; letter-spacing: -0.02em; }
   .mkt-nav-links { display: flex; align-items: center; gap: 28px; flex: 1; justify-content: center; }
   .mkt-nav-links a { color: var(--muted-foreground); text-decoration: none; font-size: 0.875rem; font-weight: 500; padding: 4px 2px; border-bottom: 2px solid transparent; }
   .mkt-nav-links a:hover { color: var(--foreground); }
-  .mkt-nav-links a[aria-current="page"] { color: var(--foreground); border-bottom-color: var(--gold); }
-  .mkt-nav-cta { flex-shrink: 0; }
+  .mkt-nav-links a[aria-current="page"] { color: var(--foreground); border-bottom-color: var(--primary); }
   .mkt-nav-toggle { display: none; }
+  .mkt-preview-badge {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 600;
+    color: var(--foreground); background: var(--secondary); border-radius: 999px; padding: 5px 12px 5px 10px; text-decoration: none;
+  }
+  .mkt-preview-badge::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: var(--primary); }
+  .mkt-preview-badge:hover { background: var(--border); }
 
   /* Hero */
   /* No overflow:hidden here: body is a column flexbox with a definite height (see
@@ -129,7 +136,7 @@ export const MARKETING_CSS = `
   .mkt-hero { position: relative; background: var(--warm-bg); border-bottom: 1px solid var(--border); }
   .mkt-hero::before {
     content: ""; position: absolute; inset: 0; pointer-events: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cpath d='M0 40 L40 0' stroke='%237a2748' stroke-opacity='0.05' stroke-width='1'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cpath d='M0 40 L40 0' stroke='%231e3a5f' stroke-opacity='0.05' stroke-width='1'/%3E%3C/svg%3E");
     background-repeat: repeat; mask-image: linear-gradient(to bottom, black, transparent 85%);
   }
   .mkt-hero-inner { position: relative; max-width: 1080px; margin: 0 auto; padding: 88px 24px 96px; display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
@@ -141,7 +148,7 @@ export const MARKETING_CSS = `
 
   /* Hero demo conversation */
   .mkt-demo-card { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); overflow: hidden; }
-  .mkt-demo-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--gold); }
+  .mkt-demo-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--primary); }
   .mkt-demo-row { padding: 18px 22px; }
   .mkt-demo-row + .mkt-demo-row { border-top: 1px solid var(--border); }
   .mkt-demo-label { display: block; font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); margin-bottom: 8px; }
@@ -175,6 +182,7 @@ export const MARKETING_CSS = `
   .mkt-platform-card p { color: var(--muted-foreground); font-size: 0.9375rem; line-height: 1.6; margin: 0 0 16px; }
   .mkt-platform-card a.mkt-link { color: var(--primary); font-weight: 500; font-size: 0.9375rem; text-decoration: none; }
   .mkt-platform-card a.mkt-link:hover { text-decoration: underline; }
+  .mkt-compat-note { margin: 28px 0 0; font-size: 0.8125rem; color: var(--muted-foreground); }
 
   /* Trust / privacy */
   .mkt-trust-list { list-style: none; margin: 0 0 24px; padding: 0; display: flex; flex-direction: column; gap: 16px; max-width: 640px; }
@@ -270,14 +278,14 @@ export function renderMarketingHeader(options: MarketingNavOptions = {}): string
   const isCurrent = (key: string) => (options.current === key ? ' aria-current="page"' : "");
   return `<header class="mkt-nav">
     <div class="mkt-nav-inner">
-      <a href="/" class="mkt-brand">SUNLearn<span class="mkt-brand-badge">MCP</span></a>
+      <a href="/" class="mkt-brand">${PRODUCT_NAME}</a>
       <nav class="mkt-nav-links" aria-label="Main">
         <a href="/"${isCurrent("product")}>Product</a>
         <a href="/docs"${isCurrent("docs")}>Docs</a>
         <a href="/privacy"${isCurrent("privacy")}>Privacy</a>
         <a href="https://github.com/RA1NM4KER/sunlearn-mcp" target="_blank" rel="noopener">GitHub</a>
       </nav>
-      <a class="btn btn-default btn-sm mkt-nav-cta" href="/docs">Connect SUNLearn</a>
+      <a class="mkt-preview-badge" href="/#faq">Private preview</a>
     </div>
   </header>`;
 }
@@ -285,12 +293,12 @@ export function renderMarketingHeader(options: MarketingNavOptions = {}): string
 export function renderMarketingFooter(): string {
   return `<footer class="mkt-footer">
     <div class="mkt-footer-inner">
-      <span class="mkt-footer-brand">SUNLearn MCP</span>
+      <span class="mkt-footer-brand">${PRODUCT_NAME}</span>
       <nav class="mkt-footer-links" aria-label="Footer">
         <a href="/docs">Docs</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="https://github.com/RA1NM4KER/sunlearn-mcp" target="_blank" rel="noopener">GitHub</a>
       </nav>
     </div>
-    <p class="mkt-footer-note">SUNLearn MCP is an independent student project. It is not operated, reviewed, or endorsed by Stellenbosch University.</p>
+    <p class="mkt-footer-note">${PRODUCT_NAME} is an independent student project. It is not operated, reviewed, or endorsed by Stellenbosch University.</p>
   </footer>`;
 }
 

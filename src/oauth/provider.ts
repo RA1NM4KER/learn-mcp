@@ -3,9 +3,10 @@ import type { Env, McpProps } from "./env.js";
 import { handleMcpRequest } from "../mcp-handler.js";
 import { handleLegacyRoute, constantTimeEqual, jsonResponse } from "../legacy-routes.js";
 import { handleMarketingRoute } from "../marketing-routes.js";
-import { handleAuthorize, handleAuthorizeLink, handleAuthorizeContinue, handleAuthorizeDisconnect, handleConsentSubmit } from "./routes.js";
+import { handleAuthorize, handleAuthorizeLink, handleAuthorizeContinue, handleAuthorizeDisconnect, handleAuthorizeDeleteData, handleConsentSubmit } from "./routes.js";
 import { DEFAULT_USER_ID } from "../linking/resolve-config.js";
 import { issuerForRequest } from "./issuer.js";
+import { PRODUCT_NAME } from "../brand.js";
 
 // This Worker serves its current canonical custom-domain issuer plus every
 // previously-canonical issuer (workers.dev, the pre-rebrand stemlearn-mcp
@@ -26,6 +27,9 @@ async function defaultHandlerFetch(request: Request, env: Env): Promise<Response
   }
   if (url.pathname === "/authorize/disconnect" && request.method === "POST") {
     return handleAuthorizeDisconnect(request, env);
+  }
+  if (url.pathname === "/authorize/delete-data" && request.method === "POST") {
+    return handleAuthorizeDeleteData(request, env);
   }
   if (url.pathname === "/authorize/consent" && request.method === "POST") {
     return handleConsentSubmit(request, env);
@@ -60,7 +64,7 @@ function buildOAuthProvider(issuerUrl: string): OAuthProvider<Env> {
       resource: mcpResourceUrl,
       authorization_servers: [issuerUrl],
       scopes_supported: ["stemlearn:read"],
-      resource_name: "SUNLearn MCP",
+      resource_name: PRODUCT_NAME,
     },
     // The legacy static-bearer lane, layered onto the same /mcp route the
     // library protects. Only ever recognizes the exact configured

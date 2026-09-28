@@ -8,12 +8,13 @@ import {
   setLinkingSessionUserId,
 } from "../linking/session-store.js";
 import { verifyConnectionLink, LINK_EXPIRED, SOMETHING_WENT_WRONG, UNKNOWN_SITE } from "../linking/routes.js";
-import { D1CredentialResolver, deleteCredential, saveCredential } from "../linking/credential-store.js";
+import { D1CredentialResolver, deleteAllUserData, deleteCredential, saveCredential } from "../linking/credential-store.js";
 import { importCredentialKey } from "../linking/credential-crypto.js";
-import { resolveCanonicalUserId } from "./canonical-identity.js";
+import { resolveCanonicalUserIdWithPreviewGate } from "./canonical-identity.js";
 import { describeConsent } from "./describe-consent.js";
 import { renderSunlearnConnectPage, type ConnectSiteStatus, type SitePanel } from "../linking/sunlearn-connect-page.js";
 import { renderConsentPage } from "./consent-page.js";
+import { renderPrivatePreviewPage } from "./private-preview-page.js";
 import { buildMobileLaunchUrl, getSiteById, listEnabledSites } from "../sunlearn-sites.js";
 import { CLIENT_METADATA_UNAVAILABLE, isCimdFetchError } from "./authorize-errors.js";
 
@@ -130,10 +131,11 @@ async function renderConnectPageForSession(
       ...(autoOpenSiteId ? { autoOpenSiteId } : {}),
       ...(errorMessage ? { errorMessage } : {}),
       ...(canManage ? { continueAction: { formAction: "/authorize/continue", sessionId } } : {}),
-      // Disconnecting only makes sense once we actually know who "you" are —
-      // before that (still the placeholder identity), there's nothing to
-      // disconnect anything from yet.
+      // Disconnecting/deleting only makes sense once we actually know who
+      // "you" are — before that (still the placeholder identity), there's
+      // nothing to disconnect or delete anything from yet.
       ...(canManage ? { disconnectFormAction: "/authorize/disconnect" } : {}),
+      ...(canManage ? { deleteDataFormAction: "/authorize/delete-data" } : {}),
     }),
   );
 }
@@ -164,6 +166,37 @@ export async function handleAuthorizeDisconnect(request: Request, env: Env): Pro
   return await renderConnectPageForSession(env, session.userId, sessionId, session.passport);
 }
 
+/**
+ * POST /authorize/delete-data — the complete "delete my Learn MCP data"
+ * operation (every linked site's credential AND the identity-alias rows that
+ * map back to this canonical user), not just one site's disconnect. Same
+ * authentication boundary as handleAuthorizeDisconnect: only reachable with
+ * an active linking session that has already established a real (non-
+ * placeholder) identity, so it can never be used to delete another person's
+ * data, and a not-yet-identified visitor gets the same friendly prompt to
+ * connect a site first rather than a confusing no-op.
+ */
+export async function handleAuthorizeDeleteData(request: Request, env: Env): Promise<Response> {
+  const form = await request.formData().catch(() => null);
+  const sessionId = form ? String(form.get("sessionId") ?? "") : "";
+  if (!sessionId) return plainTextResponse(400, "Invalid request.");
+
+  const session = await loadActiveLinkingSession(env.DB, sessionId);
+  if (!session || !session.oauthRequestJson) return plainTextResponse(400, LINK_EXPIRED);
+  if (session.userId === OAUTH_SESSION_PLACEHOLDER_USER) {
+    return await renderConnectPageForSession(
+      env,
+      session.userId,
+      sessionId,
+      session.passport,
+      "Connect at least one SUNLearn environment first.",
+    );
+  }
+
+  await deleteAllUserData(env.DB, session.userId);
+  return await renderConnectPageForSession(env, session.userId, sessionId, session.passport);
+}
+
 /** POST /authorize/link — the pasted connection link, tagged with which site's panel it came from. */
 export async function handleAuthorizeLink(request: Request, env: Env): Promise<Response> {
   const form = await request.formData().catch(() => null);
@@ -190,8 +223,16 @@ export async function handleAuthorizeLink(request: Request, env: Env): Promise<R
   }
 
   const priorCanonicalUserId = session.userId === OAUTH_SESSION_PLACEHOLDER_USER ? null : session.userId;
-  const resolution = await resolveCanonicalUserId(env.DB, trustedBaseUrl, verified.moodleUserId, priorCanonicalUserId);
+
+  // Combines canonical-identity resolution with the private-preview allowlist
+  // check (src/preview-access.ts) as one atomic decision, BEFORE anything is
+  // persisted — a rejected, genuinely new identity never gets a credential
+  // row or even an alias row. See resolveCanonicalUserIdWithPreviewGate's own
+  // doc comment for why this lives in canonical-identity.ts rather than
+  // inline here.
+  const resolution = await resolveCanonicalUserIdWithPreviewGate(env.DB, env, trustedBaseUrl, verified.moodleUserId, priorCanonicalUserId);
   if (!resolution.ok) {
+    if (resolution.reason === "preview_denied") return htmlResponse(403, renderPrivatePreviewPage());
     return await renderConnectPageForSession(
       env,
       session.userId,

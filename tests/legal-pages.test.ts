@@ -30,4 +30,26 @@ describe("legal pages", () => {
     expect(TERMS_HTML).toContain("independent, unofficial project");
     expect(PRIVACY_HTML).toContain("independent, unofficial project");
   });
+
+  it("does not make an unqualified 'never shared with third parties' claim, and discloses AI-provider sharing instead", () => {
+    expect(PRIVACY_HTML).not.toContain("Nothing is sold or shared with third parties");
+    expect(PRIVACY_HTML).toContain("ChatGPT or Claude");
+    expect(PRIVACY_HTML).toContain("that provider's own terms");
+  });
+
+  it("does not claim access can be revoked from the Microsoft/Stellenbosch account settings", () => {
+    expect(TERMS_HTML).not.toContain("Microsoft/Stellenbosch\n  account's own security settings");
+    expect(TERMS_HTML).not.toContain("revoke this application's access entirely from your Microsoft");
+  });
+
+  it("distinguishes disconnecting one site from deleting all data", () => {
+    expect(PRIVACY_HTML).toContain("Disconnect a single site");
+    expect(PRIVACY_HTML).toContain("Delete all my");
+  });
+
+  it("describes what is actually stored in D1: Moodle user id, site origin, canonical identity, encrypted token", () => {
+    expect(PRIVACY_HTML).toContain("Moodle user id");
+    expect(PRIVACY_HTML).toContain("address (origin)");
+    expect(PRIVACY_HTML).toContain("canonical account identifier");
+  });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { handleMarketingRoute } from "../src/marketing-routes.js";
 import { PRIVACY_HTML, TERMS_HTML } from "../src/legal-pages.js";
+import { MCP_ENDPOINT_URL, PRIVATE_PREVIEW, PRODUCT_NAME } from "../src/brand.js";
 
 async function textOf(res: Response | null): Promise<string> {
   expect(res).not.toBeNull();
@@ -21,10 +22,12 @@ describe("handleMarketingRoute", () => {
     expect(res!.status).toBe(200);
     expect(res!.headers.get("Content-Type")).toContain("text/html");
     const text = await textOf(res);
-    expect(text).toContain("Your SUNLearn.");
-    expect(text).toContain("Connect SUNLearn");
-    expect(text).toContain('href="/docs/chatgpt"');
-    expect(text).toContain('href="/docs/claude"');
+    expect(text).toContain(`${PRODUCT_NAME}.`);
+    expect(text).toContain('href="#ask"');
+    expect(text).toContain('href="#how-it-works"');
+    expect(text).toContain('href="/docs"');
+    // Private preview: no onboarding CTA or live MCP endpoint on the showcase page.
+    expect(text).not.toContain(MCP_ENDPOINT_URL);
     // Internal MCP tool names must never appear on the student-facing page.
     expect(text).not.toContain("upcoming_and_overdue");
     expect(text).not.toContain("course_overview");
@@ -44,18 +47,27 @@ describe("handleMarketingRoute", () => {
     }
   });
 
-  it("serves the ChatGPT setup guide with the real MCP connector address", async () => {
+  it("serves the ChatGPT setup guide, gated by private preview", async () => {
     const text = await textOf(handleMarketingRoute("/docs/chatgpt", "GET"));
-    expect(text).toContain("https://sunlearn-mcp.kefas.co.za/mcp");
-    expect(text).toContain("Stellenbosch");
+    if (PRIVATE_PREVIEW) {
+      expect(text).toContain("private preview");
+      expect(text).not.toContain(MCP_ENDPOINT_URL);
+    } else {
+      expect(text).toContain(MCP_ENDPOINT_URL);
+    }
     // No CLI/developer instructions on a page written for non-technical students.
     expect(text).not.toContain("wrangler");
     expect(text).not.toContain("npm ");
   });
 
-  it("serves the Claude setup guide with the real MCP connector address", async () => {
+  it("serves the Claude setup guide, gated by private preview", async () => {
     const text = await textOf(handleMarketingRoute("/docs/claude", "GET"));
-    expect(text).toContain("https://sunlearn-mcp.kefas.co.za/mcp");
+    if (PRIVATE_PREVIEW) {
+      expect(text).toContain("private preview");
+      expect(text).not.toContain(MCP_ENDPOINT_URL);
+    } else {
+      expect(text).toContain(MCP_ENDPOINT_URL);
+    }
     expect(text).not.toContain("wrangler");
   });
 

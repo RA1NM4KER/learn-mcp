@@ -20,6 +20,7 @@ async function listResources(
   client: MoodleClient,
   courseId: number,
   isAnchor: boolean,
+  contentEnabled: boolean,
   filenameFilter?: string,
   limit: number = RESOURCE_LIST_POLICY.defaultEntries,
 ): Promise<string> {
@@ -60,6 +61,14 @@ async function listResources(
         const size = formatSize(file.filesize);
         entryCount++;
         const mime = file.mimetype ?? "application/octet-stream";
+        if (!contentEnabled) {
+          // File *metadata* (name, size) is always available — only retrieving
+          // the actual bytes is gated (REMOTE_COURSE_CONTENT_ENABLED; see
+          // download.ts, resources/index.ts). No fileId is minted here since
+          // it could never be redeemed while content access is disabled.
+          sectionLines.push(`- 📄 **${truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** *(${size})*, file downloads are not currently available`);
+          continue;
+        }
         if (!isAnchor) {
           // moodle_download_file only dispatches to the anchor site so far (see download.ts) —
           // don't hand out a fileId that would just fail there.
@@ -83,14 +92,21 @@ async function listResources(
   }
 
   if (omitted) lines.push(`_Showing the first ${limit} matching files. Refine filenameFilter to find other materials._`);
-  lines.push("_Use a listed fileId with `moodle_download_file`, or read its `moodle://files/{fileId}` resource URI._");
+  lines.push(
+    contentEnabled
+      ? "_Use a listed fileId with `moodle_download_file`, or read its `moodle://files/{fileId}` resource URI._"
+      : "_File downloads are currently disabled for this deployment; only file names and sizes are shown._",
+  );
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
-export function registerFileTools(server: McpServer, courseRefResolver: CourseRefResolver): void {
+/** `contentEnabled` gates only actual file *bytes* (fileId minting/download hints) — course material metadata (names, sizes) is always listed. See REMOTE_COURSE_CONTENT_ENABLED (oauth/env.ts). */
+export function registerFileTools(server: McpServer, courseRefResolver: CourseRefResolver, contentEnabled = true): void {
   server.tool(
     "moodle_list_resources",
-    "List course materials grouped by their Moodle sections. Downloadable files include an opaque fileId and matching moodle://files/{fileId} resource URI; use either with the server, never a Moodle URL. External links are identified by name only and are not downloadable. Results are bounded; use filenameFilter to refine them.",
+    contentEnabled
+      ? "List course materials grouped by their Moodle sections. Downloadable files include an opaque fileId and matching moodle://files/{fileId} resource URI; use either with the server, never a Moodle URL. External links are identified by name only and are not downloadable. Results are bounded; use filenameFilter to refine them."
+      : "List course materials (names and sizes) grouped by their Moodle sections. File downloads are currently disabled for this deployment. Results are bounded; use filenameFilter to refine them.",
     {
       courseId: RefSchema.describe("Course ID from moodle_list_courses"),
       filenameFilter: z
@@ -103,7 +119,7 @@ export function registerFileTools(server: McpServer, courseRefResolver: CourseRe
       const resolved = await courseRefResolver.resolve("course", courseId);
       if (!resolved.ok) return { isError: true, content: [{ type: "text" as const, text: resolved.message }] };
       return {
-        content: [{ type: "text" as const, text: await listResources(resolved.client, resolved.id, resolved.isAnchor, filenameFilter, limit) }],
+        content: [{ type: "text" as const, text: await listResources(resolved.client, resolved.id, resolved.isAnchor, contentEnabled, filenameFilter, limit) }],
       };
     },
   );

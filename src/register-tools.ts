@@ -19,10 +19,11 @@ export function registerAllTools(
   client: MoodleClient,
   courseRefResolver: CourseRefResolver,
   multiSite?: MultiSiteContext,
+  contentEnabled = true,
 ): void {
   registerCourseTools(server, client, courseRefResolver, multiSite);
-  registerFileTools(server, courseRefResolver);
-  registerDownloadTool(server, client);
+  registerFileTools(server, courseRefResolver, contentEnabled);
+  registerDownloadTool(server, client, contentEnabled);
   registerAssignmentTools(server, courseRefResolver);
   registerGradeTools(server, courseRefResolver);
   registerCalendarTools(server, client, courseRefResolver);

@@ -160,10 +160,26 @@ class FakeStatement implements D1PreparedStatement {
       });
       return { meta: { changes: 1 } };
     }
-    if (this.sql.startsWith("DELETE FROM moodle_credentials")) {
+    if (this.sql.startsWith("DELETE FROM moodle_credentials") && this.sql.includes("moodle_base_url")) {
       const [userId, baseUrl] = this.args as [string, string];
       const existed = this.db.credentials.delete(credentialKey(userId, baseUrl));
       return { meta: { changes: existed ? 1 : 0 } };
+    }
+    if (this.sql.startsWith("DELETE FROM moodle_credentials")) {
+      const [userId] = this.args as [string];
+      let changes = 0;
+      for (const [key, row] of this.db.credentials) {
+        if (row.user_id === userId) { this.db.credentials.delete(key); changes++; }
+      }
+      return { meta: { changes } };
+    }
+    if (this.sql.startsWith("DELETE FROM moodle_identity_aliases")) {
+      const [canonicalUserId] = this.args as [string];
+      let changes = 0;
+      for (const [key, row] of this.db.aliases) {
+        if (row.canonical_user_id === canonicalUserId) { this.db.aliases.delete(key); changes++; }
+      }
+      return { meta: { changes } };
     }
     throw new Error(`FakeD1: unhandled run() query: ${this.sql}`);
   }
