@@ -131,7 +131,7 @@ describe("getCalendarEvents", () => {
     const result = await getCalendarEvents(client, undefined, 14);
 
     expect(result).toContain("Practical 2");
-    expect(result).toContain("source: assignment (authoritative)");
+    expect(result).toContain("sources: assignment (authoritative)");
     expect(result).not.toContain("No upcoming events");
   });
 

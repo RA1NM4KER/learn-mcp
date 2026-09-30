@@ -11,10 +11,26 @@ import { formatMoodleDateTime } from "../format-date.js";
 import { mapAccountWideSites, type MultiSiteContext } from "../multi-site-context.js";
 
 type CalendarSource = "calendar" | "assignment" | "quiz-open" | "quiz-close";
-type CalendarItem = { title: string; courseId: number; timestart: number; description?: string; eventtype?: string; source: CalendarSource };
+type CalendarItem = { title: string; courseId: number; timestart: number; description?: string; eventtype?: string; sources: CalendarSource[] };
 
 function sourceLabel(source: CalendarSource): string {
   return source === "calendar" ? "calendar" : source === "assignment" ? "assignment (authoritative)" : "quiz (authoritative)";
+}
+
+function calendarKey(item: CalendarItem): string {
+  return `${item.courseId}:${item.timestart}:${item.title.toLowerCase().replace(/\s+(?:is due|opens|closes)$/i, "").trim()}`;
+}
+
+function mergeCalendarItems(items: CalendarItem[]): CalendarItem[] {
+  const merged = new Map<string, CalendarItem>();
+  for (const item of items) {
+    const key = calendarKey(item);
+    const existing = merged.get(key);
+    if (!existing) { merged.set(key, item); continue; }
+    for (const source of item.sources) if (!existing.sources.includes(source)) existing.sources.push(source);
+    if (!existing.description && item.description) existing.description = item.description;
+  }
+  return [...merged.values()];
 }
 
 // core_calendar_get_action_events_by_timesort only returns events with a
@@ -72,25 +88,25 @@ export async function getCalendarEvents(
       timestart: event.timestart,
       ...(event.description ? { description: event.description } : {}),
       ...(event.eventtype ? { eventtype: event.eventtype } : {}),
-      source: "calendar" as const,
+      sources: ["calendar"],
     }));
   const assignmentItems: CalendarItem[] = assignmentData?.courses.flatMap((course) => course.assignments
     .filter((assignment) => assignment.duedate >= now && assignment.duedate <= until)
-    .map((assignment) => ({ title: assignment.name, courseId: course.id, timestart: assignment.duedate, eventtype: "due", source: "assignment" as const }))) ?? [];
+    .map((assignment) => ({ title: assignment.name, courseId: course.id, timestart: assignment.duedate, eventtype: "due", sources: ["assignment"] }))) ?? [];
   const quizItems: CalendarItem[] = [];
   for (const [index, page] of quizPages.entries()) {
     const quizCourseId = plainCourseIds[index];
     if (quizCourseId === undefined) continue;
     for (const quiz of page.quizzes) {
       if (quiz.timeopen >= now && quiz.timeopen <= until) {
-        quizItems.push({ title: `${quiz.name} opens`, courseId: quizCourseId, timestart: quiz.timeopen, eventtype: "open", source: "quiz-open" });
+        quizItems.push({ title: `${quiz.name} opens`, courseId: quizCourseId, timestart: quiz.timeopen, eventtype: "open", sources: ["quiz-open"] });
       }
       if (quiz.timeclose >= now && quiz.timeclose <= until) {
-        quizItems.push({ title: `${quiz.name} closes`, courseId: quizCourseId, timestart: quiz.timeclose, eventtype: "close", source: "quiz-close" });
+        quizItems.push({ title: `${quiz.name} closes`, courseId: quizCourseId, timestart: quiz.timeclose, eventtype: "close", sources: ["quiz-close"] });
       }
     }
   }
-  const items = [...calendarItems, ...assignmentItems, ...quizItems]
+  const items = mergeCalendarItems([...calendarItems, ...assignmentItems, ...quizItems])
     .sort((a, b) => a.timestart - b.timestart)
     .slice(0, CALENDAR_EVENT_POLICY.maxRendered);
 
@@ -115,7 +131,7 @@ export async function getCalendarEvents(
     lines.push(`### ${courseName}`);
     for (const e of courseEvents) {
       const type = e.eventtype ? `\`${truncateText(e.eventtype, TEXT_OUTPUT_POLICY.maxLabelCharacters)}\`` : "";
-      lines.push(`- **${truncateText(e.title, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**, ${formatMoodleDateTime(e.timestart)} ${type} _source: ${sourceLabel(e.source)}_`);
+      lines.push(`- **${truncateText(e.title, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**, ${formatMoodleDateTime(e.timestart)} ${type} _sources: ${e.sources.map(sourceLabel).join(", ")}_`);
       const desc = e.description
         ? sanitizeAndTruncateHtml(e.description, TEXT_OUTPUT_POLICY.maxCalendarDescriptionCharacters)
         : "";
