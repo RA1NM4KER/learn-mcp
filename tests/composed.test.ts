@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MoodleClient } from "../src/moodle-client.js";
-import { classifyAssignmentEra, courseOverview, upcomingAndOverdue } from "../src/tools/composed.js";
+import { classifyAssignmentEra, courseOverview, studentBrief, upcomingAndOverdue } from "../src/tools/composed.js";
 import { COMPOSED_TASK_POLICY } from "../src/policy.js";
 import type { SubRefSealer } from "../src/tools/tool-ref-helpers.js";
 

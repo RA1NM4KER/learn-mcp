@@ -438,7 +438,13 @@ export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteCo
     upcomingAndOverdue(client, multiSite),
     multiSite ? getNotificationsAccountWide(client, multiSite, 10) : Promise.resolve("Notifications unavailable."),
   ]);
-  return truncateText(`## Student Brief\n\n### Deadlines\n${deadlines}\n\n### Recent notifications\n${notifications}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
+  // References remain available through upcoming_and_overdue; a briefing
+  // should spend its limited attention on what requires action, not opaque
+  // routing tokens or routine inherited-shell archaeology.
+  const actionableDeadlines = deadlines
+    .split("### 🗄️ Historical course content")[0]!
+    .replace(/, assignment ID: `[^`]+`, course ID: `[^`]+`/g, "");
+  return truncateText(`## Student Brief\n\n### Deadlines\n${actionableDeadlines}\n\n### Recent notifications\n${notifications}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
 export function registerComposedTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver, multiSite?: MultiSiteContext): void {
