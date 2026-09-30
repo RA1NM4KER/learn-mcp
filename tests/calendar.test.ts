@@ -30,7 +30,7 @@ const ALL_FUNCTIONS = [
   "core_enrol_get_users_courses",
 ];
 
-async function makeClient() {
+async function makeClient(functions = ALL_FUNCTIONS) {
   mockFetch.mockResolvedValueOnce(
     jsonResponse({
       userid: 1,
@@ -38,7 +38,7 @@ async function makeClient() {
       sitename: "STEMLearn",
       fullname: "Test Student",
       release: "4.5.8",
-      functions: ALL_FUNCTIONS.map((name) => ({ name, version: "1" })),
+      functions: functions.map((name) => ({ name, version: "1" })),
     }),
   );
   return MoodleClient.create({ baseUrl: "https://stemlearn.sun.ac.za", auth: { kind: "token", token: "tok" } });
@@ -115,6 +115,24 @@ describe("getCalendarEvents", () => {
     const result = await getCalendarEvents(client, undefined, 14);
 
     expect(result).toContain("No upcoming events");
+  });
+
+  it("does not return empty when an authoritative assignment deadline falls within the window but Moodle calendar sources omit it", async () => {
+    const client = await makeClient([...ALL_FUNCTIONS, "mod_assign_get_assignments", "mod_quiz_get_quizzes_by_courses"]);
+    const now = Math.floor(Date.now() / 1000);
+    mockFetch.mockImplementation(routedFetchMock({
+      core_calendar_get_action_events_by_timesort: { events: [] },
+      core_enrol_get_users_courses: [COURSE],
+      core_calendar_get_calendar_events: { events: [] },
+      mod_assign_get_assignments: { courses: [{ id: COURSE.id, assignments: [{ id: 1, cmid: 1, name: "Practical 2", duedate: now + 3600, grade: 100 }] }] },
+      mod_quiz_get_quizzes_by_courses: { quizzes: [] },
+    }));
+
+    const result = await getCalendarEvents(client, undefined, 14);
+
+    expect(result).toContain("Practical 2");
+    expect(result).toContain("source: assignment (authoritative)");
+    expect(result).not.toContain("No upcoming events");
   });
 
   it("filters by course before applying the rendered-event cap", async () => {

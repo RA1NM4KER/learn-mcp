@@ -11,7 +11,7 @@ export const QUIZ_ATTEMPT_POLICY = { maxRendered: 100 } as const;
 export const QUIZ_LIST_POLICY = { maxRendered: 100 } as const;
 export const FORUM_LIST_POLICY = { maxRenderedForums: 100, maxRenderedDiscussions: 100 } as const;
 export const GRADE_LIST_POLICY = { maxRenderedItems: 100 } as const;
-export const CALENDAR_EVENT_POLICY = { maxRendered: 100 } as const;
+export const CALENDAR_EVENT_POLICY = { maxRendered: 100, quizFetchConcurrency: 4 } as const;
 export const COURSE_NOTICE_POLICY = { maxRendered: 10 } as const;
 export const COMPOSED_TASK_POLICY = {
   maxRendered: 100,
