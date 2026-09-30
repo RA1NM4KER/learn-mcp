@@ -467,7 +467,22 @@ export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteCo
   const calendarSection = calendarOnly.length > 0
     ? `\n\n### Quiz and practical closures\n${calendarOnly.join("\n")}`
     : "";
-  return truncateText(`## Student Brief\n\n### Deadlines\n${actionableDeadlines}${calendarSection}\n\n### Recent notifications\n${notifications}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
+  const notificationBlocks = notifications.split(/\n\s*\n/).filter((block) => block.startsWith("- "));
+  const ranked = { urgent: [] as string[], important: [] as string[], routine: [] as string[] };
+  for (const block of notificationBlocks) {
+    const normalized = block.toLowerCase();
+    if (/\b(no lecture|cancelled?|postponed|closed|due (?:today|tomorrow)|deadline (?:today|tomorrow))\b/.test(normalized)) ranked.urgent.push(block);
+    else if (/\b(grade released|graded|due|deadline|assignment|schedule|venue|lecture)\b/.test(normalized)) ranked.important.push(block);
+    else ranked.routine.push(block);
+  }
+  const notificationSection = notificationBlocks.length === 0
+    ? notifications
+    : [
+      ranked.urgent.length ? `### Urgent\n${ranked.urgent.join("\n\n")}` : "",
+      ranked.important.length ? `### Important\n${ranked.important.join("\n\n")}` : "",
+      ranked.routine.length ? `### Routine\n${ranked.routine.join("\n\n")}` : "",
+    ].filter(Boolean).join("\n\n");
+  return truncateText(`## Student Brief\n\n### Deadlines\n${actionableDeadlines}${calendarSection}\n\n### Notifications\n${notificationSection}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
 export function registerComposedTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver, multiSite?: MultiSiteContext): void {
