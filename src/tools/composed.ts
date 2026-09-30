@@ -120,17 +120,25 @@ export async function courseOverview(client: MoodleClient, courseId: number, sea
     lines.push("Could not fetch grades.");
   }
 
-  // Recent announcements. Moodle versions do not consistently guarantee the
-  // server-side discussion order, so fetch a bounded page and rely on the
-  // shared loader's client-side timemodified sort before rendering the newest.
+  // Recent announcements. Courses can have more than one News forum (for
+  // example, separate language streams), and Moodle versions do not
+  // consistently guarantee discussion order. Read a bounded set of News
+  // forums, then rank all returned discussions by last activity.
   lines.push(``, `### Recent announcements`);
   try {
     const forums = await listForumsRaw(client, courseId);
-    const announcementsForum = forums.find((f) => f.type === "news") ?? forums[0];
-    if (!announcementsForum) {
+    const announcementForums = forums.filter((f) => f.type === "news");
+    const selectedForums = (announcementForums.length > 0 ? announcementForums : forums.slice(0, 1))
+      .slice(0, COMPOSED_TASK_POLICY.maxAnnouncementForums);
+    if (selectedForums.length === 0) {
       lines.push("No forums in this course.");
     } else {
-      const discussions = await getDiscussionsRaw(client, announcementsForum.id, COMPOSED_TASK_POLICY.maxFetchedRecentAnnouncements);
+      const pages = await mapWithConcurrency(
+        selectedForums,
+        COMPOSED_TASK_POLICY.announcementForumConcurrency,
+        (forum) => getDiscussionsRaw(client, forum.id, COMPOSED_TASK_POLICY.maxFetchedRecentAnnouncements),
+      );
+      const discussions = pages.flat().sort((a, b) => b.timemodified - a.timemodified);
       if (discussions.length === 0) {
         lines.push("No recent announcements.");
       } else {

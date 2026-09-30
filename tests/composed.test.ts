@@ -181,6 +181,33 @@ describe("courseOverview", () => {
     expect(text).toContain("Week 8");
     expect(text).not.toMatch(/\*\*Week 1\*\*/);
   });
+
+  it("merges announcements from multiple News forums instead of selecting a stale first forum", async () => {
+    const client = await makeClient();
+    const now = Math.floor(Date.now() / 1000);
+    mockFetch.mockImplementation((_url: string, init: RequestInit) => {
+      const body = init.body as URLSearchParams;
+      switch (body.get("wsfunction")) {
+        case "core_enrol_get_users_courses": return jsonResponse([COURSE]);
+        case "core_course_get_contents": return jsonResponse([]);
+        case "mod_assign_get_assignments": return jsonResponse({ courses: [{ id: 2722, assignments: [] }] });
+        case "gradereport_user_get_grade_items": return jsonResponse({ usergrades: [{ courseid: 2722, gradeitems: [] }] });
+        case "mod_forum_get_forums_by_courses": return jsonResponse([
+          { id: 1, cmid: 1, course: 2722, name: "Announcements", type: "news" },
+          { id: 2, cmid: 2, course: 2722, name: "Announcements | Aankondigings", type: "news" },
+        ]);
+        case "mod_forum_get_forum_discussions": return jsonResponse({ discussions: body.get("forumid") === "1"
+          ? [{ id: 1, discussion: 1, name: "Old post", userfullname: "Prof X", numreplies: 0, timemodified: now - 100, pinned: false }]
+          : [{ id: 2, discussion: 2, name: "Week 10", userfullname: "Prof X", numreplies: 0, timemodified: now, pinned: false }],
+        });
+        default: throw new Error(`Unexpected wsfunction in test: ${body.get("wsfunction")}`);
+      }
+    });
+
+    const text = await courseOverview(client, 2722, ANCHOR_SEALER);
+    expect(text).toContain("Week 10");
+    expect(text.indexOf("Week 10")).toBeLessThan(text.indexOf("Old post"));
+  });
 });
 
 describe("upcomingAndOverdue", () => {

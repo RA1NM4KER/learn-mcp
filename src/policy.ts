@@ -17,6 +17,8 @@ export const COMPOSED_TASK_POLICY = {
   maxRendered: 100,
   maxFetchedRecentAnnouncements: 100,
   maxRenderedRecentAnnouncements: 3,
+  maxAnnouncementForums: 5,
+  announcementForumConcurrency: 4,
   submissionStatusConcurrency: 4,
   maxHistoricalRendered: 20,
 } as const;
