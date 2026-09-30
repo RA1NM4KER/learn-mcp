@@ -136,7 +136,7 @@ export async function getCourse(client: MoodleClient, courseId: number): Promise
 /** Current section summaries are lecturer-maintained notices, not attachment metadata. */
 export async function getCourseNoticesRaw(client: MoodleClient, courseId: number): Promise<CourseNotice[]> {
   const sections = await loadCourseContents(client, courseId);
-  return sections.flatMap((section) => {
+  const notices = sections.flatMap((section) => {
     const text = sanitizeAndTruncateHtml(section.summary ?? "", TEXT_OUTPUT_POLICY.maxCourseSummaryCharacters);
     if (!text || !NOTICE_TERMS.test(text)) return [];
     const activity = NOTICE_ACTIVITY.exec(text)?.[0]?.toLowerCase();
@@ -146,7 +146,17 @@ export async function getCourseNoticesRaw(client: MoodleClient, courseId: number
       classification: classifyNotice(text),
       ...(activity ? { activity } : {}),
     }];
-  }).sort((a, b) => (a.classification === "current" ? 0 : a.classification === "recent" ? 1 : 2) - (b.classification === "current" ? 0 : b.classification === "recent" ? 1 : 2)).slice(0, COURSE_NOTICE_POLICY.maxRendered);
+  });
+  // Moodle section summaries have no publication date. When a course uses
+  // numbered weekly sections, its own latest section is the reliable context
+  // for relative deadlines even if a Worker clock differs from Moodle's.
+  const weekNumbers = notices.map((notice) => Number(/\bweek\s+(\d+)\b/i.exec(notice.sectionName)?.[1] ?? 0));
+  const latestWeek = Math.max(0, ...weekNumbers);
+  for (const [index, notice] of notices.entries()) {
+    const week = weekNumbers[index] ?? 0;
+    if (latestWeek > 0 && week > 0 && week < latestWeek - 3) notice.classification = "historical";
+  }
+  return notices.sort((a, b) => (a.classification === "current" ? 0 : a.classification === "recent" ? 1 : 2) - (b.classification === "current" ? 0 : b.classification === "recent" ? 1 : 2)).slice(0, COURSE_NOTICE_POLICY.maxRendered);
 }
 
 export async function getCourseNotices(client: MoodleClient, courseId: number): Promise<string> {
