@@ -8,6 +8,7 @@ import { CALENDAR_EVENT_POLICY, TEXT_OUTPUT_POLICY, mapWithConcurrency } from ".
 import { loadActionCalendarEvents, loadAssignments, loadCalendarEvents, loadEnrolledCourses, loadQuizzes } from "../moodle-loaders.js";
 import { eventCourseId, type MoodleCalendarEvent } from "../moodle-api.js";
 import { formatMoodleDateTime } from "../format-date.js";
+import { mapAccountWideSites, type MultiSiteContext } from "../multi-site-context.js";
 
 type CalendarSource = "calendar" | "assignment" | "quiz-open" | "quiz-close";
 type CalendarItem = { title: string; courseId: number; timestart: number; description?: string; eventtype?: string; source: CalendarSource };
@@ -126,7 +127,30 @@ export async function getCalendarEvents(
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
-export function registerCalendarTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver): void {
+/** Account-wide calendar aggregation mirrors upcoming_and_overdue: an empty
+ * anchor-site calendar must not hide a deadline on another linked SUNLearn site. */
+export async function getCalendarEventsAccountWide(
+  client: MoodleClient,
+  multiSite: MultiSiteContext | undefined,
+  daysAhead: number,
+): Promise<string> {
+  if (!multiSite || multiSite.additionalSites.length === 0) return getCalendarEvents(client, undefined, daysAhead);
+  const { results, unavailable } = await mapAccountWideSites(client, multiSite, async (_site, siteClient) =>
+    getCalendarEvents(siteClient, undefined, daysAhead),
+  );
+  const empty = `No upcoming events in the next ${daysAhead} days.`;
+  const rendered = results.map((result) => result.value).filter((value) => value !== empty);
+  if (rendered.length === 0) {
+    return unavailable.length > 0
+      ? `${empty}\n\n_Temporarily unavailable: ${unavailable.join(", ")}._`
+      : empty;
+  }
+  const body = rendered.map((value) => value.replace(`## Upcoming Events (next ${daysAhead} days)\n\n`, "")).join("\n");
+  const unavailableNote = unavailable.length > 0 ? `\n_Temporarily unavailable: ${unavailable.join(", ")}._` : "";
+  return truncateText(`## Upcoming Events (next ${daysAhead} days)\n\n${body}${unavailableNote}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
+}
+
+export function registerCalendarTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver, multiSite?: MultiSiteContext): void {
   server.tool(
     "moodle_get_calendar_events",
     "Get the student's upcoming deadlines and calendar events: assignments due, quizzes opening/closing, lecture/practical attendance registers, and other course calendar entries, across their courses, optionally filtered to one course. Good for 'what's coming up' / 'what's due this week' / 'what's on the calendar'. Defaults to the next 30 days. Filtering to a course on a non-default SUNLearn environment shows that environment's calendar only, not merged with your default one.",
@@ -136,7 +160,7 @@ export function registerCalendarTools(server: McpServer, client: MoodleClient, c
     },
     async ({ courseId, daysAhead }) => {
       if (courseId === undefined) {
-        return { content: [{ type: "text" as const, text: await getCalendarEvents(client, undefined, daysAhead) }] };
+        return { content: [{ type: "text" as const, text: await getCalendarEventsAccountWide(client, multiSite, daysAhead ?? 30) }] };
       }
       const resolved = await courseRefResolver.resolve("course", courseId);
       if (!resolved.ok) return { isError: true, content: [{ type: "text" as const, text: resolved.message }] };

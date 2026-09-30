@@ -26,7 +26,7 @@ export function registerAllTools(
   registerDownloadTool(server, client, contentEnabled);
   registerAssignmentTools(server, courseRefResolver);
   registerGradeTools(server, courseRefResolver);
-  registerCalendarTools(server, client, courseRefResolver);
+  registerCalendarTools(server, client, courseRefResolver, multiSite);
   registerQuizTools(server, courseRefResolver);
   registerForumTools(server, courseRefResolver);
   registerNotificationTools(server, client, multiSite);
