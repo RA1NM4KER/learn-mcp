@@ -11,6 +11,7 @@ import { truncateText } from "../text.js";
 import { formatMoodleDateTime } from "../format-date.js";
 import { mapAccountWideSites, type ConnectedSite, type MultiSiteContext } from "../multi-site-context.js";
 import { getNotificationsAccountWide } from "./notifications.js";
+import { getCalendarEventsAccountWide } from "./calendar.js";
 
 // Composed, read-only tools that merge a few raw Moodle calls into one
 // normalized, student-shaped answer. Deterministic date/status merging only —
@@ -434,9 +435,10 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
  * deadline state and recent notifications instead of asking an agent to infer
  * urgency from raw Moodle entities. */
 export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteContext): Promise<string> {
-  const [deadlines, notifications] = await Promise.all([
+  const [deadlines, notifications, calendar] = await Promise.all([
     upcomingAndOverdue(client, multiSite),
     multiSite ? getNotificationsAccountWide(client, multiSite, 10) : Promise.resolve("Notifications unavailable."),
+    getCalendarEventsAccountWide(client, multiSite, 14),
   ]);
   // References remain available through upcoming_and_overdue; a briefing
   // should spend its limited attention on what requires action, not opaque
@@ -444,7 +446,22 @@ export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteCo
   const actionableDeadlines = deadlines
     .split("### 🗄️ Historical course content")[0]!
     .replace(/, assignment ID: `[^`]+`, course ID: `[^`]+`/g, "");
-  return truncateText(`## Student Brief\n\n### Deadlines\n${actionableDeadlines}\n\n### Recent notifications\n${notifications}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
+  const calendarOnly: string[] = [];
+  let includeDetail = false;
+  for (const line of calendar.split("\n")) {
+    if (line.startsWith("## ")) continue;
+    if (line.startsWith("### ")) { calendarOnly.push(line); includeDetail = false; continue; }
+    if (line.startsWith("- ")) {
+      includeDetail = !/`attendance`|assignment \(authoritative\)/i.test(line);
+      if (includeDetail) calendarOnly.push(line);
+      continue;
+    }
+    if (includeDetail && line.startsWith("  ")) calendarOnly.push(line);
+  }
+  const calendarSection = calendarOnly.some((line) => line.startsWith("- "))
+    ? `\n\n### Quiz and practical closures\n${calendarOnly.join("\n")}`
+    : "";
+  return truncateText(`## Student Brief\n\n### Deadlines\n${actionableDeadlines}${calendarSection}\n\n### Recent notifications\n${notifications}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
 export function registerComposedTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver, multiSite?: MultiSiteContext): void {
