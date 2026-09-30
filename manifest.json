@@ -20,7 +20,8 @@
     { "name": "moodle_list_resources", "description": "List course files with opaque IDs" },
     { "name": "moodle_download_file", "description": "Read an authorized course file" },
     { "name": "course_overview", "description": "Summarize one course" },
-    { "name": "upcoming_and_overdue", "description": "List deadlines across courses" }
+    { "name": "upcoming_and_overdue", "description": "List deadlines across courses" },
+    { "name": "student_brief", "description": "Compact cross-course student catch-up" }
   ],
   "compatibility": { "platforms": ["darwin", "win32", "linux"], "runtimes": { "node": ">=18.0.0" } }
 }
