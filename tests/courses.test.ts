@@ -128,7 +128,7 @@ describe("getCourseNotices", () => {
       { id: 2, name: "Week 9", summary: "<p>Practical 2 due 1 October.</p>", modules: [] },
     ]));
     const result = await getCourseNotices(client, 2722);
-    expect(result).toContain("### Current");
+    expect(result).toContain("### Upcoming");
     expect(result).toContain("### Historical");
     expect(result).not.toContain("Conflicting deadline dates appear");
   });
