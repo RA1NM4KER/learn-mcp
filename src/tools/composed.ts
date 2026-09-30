@@ -35,7 +35,10 @@ export async function courseOverview(client: MoodleClient, courseId: number, sea
     return `Course ${courseId} not found among your enrolled courses. Use moodle_list_courses to see valid course IDs.`;
   }
 
-  const courseIdLabel = await sealer.seal("course", course.id);
+  // Echo the exact opaque reference supplied by the caller. Re-sealing the
+  // same course creates a different (but valid) nonce-bearing token, which
+  // makes an otherwise straightforward tool chain look inconsistent.
+  const courseIdLabel = sealer.courseRef ?? await sealer.seal("course", course.id);
   const lines: string[] = [
     `## Course Overview: ${truncateText(course.fullname, TEXT_OUTPUT_POLICY.maxLabelCharacters)} (${truncateText(course.shortname, TEXT_OUTPUT_POLICY.maxLabelCharacters)})`,
     `Course ID: \`${courseIdLabel}\``,
@@ -117,7 +120,9 @@ export async function courseOverview(client: MoodleClient, courseId: number, sea
     lines.push("Could not fetch grades.");
   }
 
-  // Recent announcements (cheap: one forum lookup + up to 3 discussions)
+  // Recent announcements. Moodle versions do not consistently guarantee the
+  // server-side discussion order, so fetch a bounded page and rely on the
+  // shared loader's client-side timemodified sort before rendering the newest.
   lines.push(``, `### Recent announcements`);
   try {
     const forums = await listForumsRaw(client, courseId);
@@ -125,11 +130,11 @@ export async function courseOverview(client: MoodleClient, courseId: number, sea
     if (!announcementsForum) {
       lines.push("No forums in this course.");
     } else {
-      const discussions = await getDiscussionsRaw(client, announcementsForum.id, 3);
+      const discussions = await getDiscussionsRaw(client, announcementsForum.id, COMPOSED_TASK_POLICY.maxFetchedRecentAnnouncements);
       if (discussions.length === 0) {
         lines.push("No recent announcements.");
       } else {
-        for (const d of discussions) {
+        for (const d of discussions.slice(0, COMPOSED_TASK_POLICY.maxRenderedRecentAnnouncements)) {
           lines.push(`- **${truncateText(d.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**, ${truncateText(d.userfullname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}, ${formatDate(d.timemodified)}`);
         }
       }

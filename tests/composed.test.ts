@@ -150,6 +150,37 @@ describe("courseOverview", () => {
     const text = await courseOverview(client, 9999, ANCHOR_SEALER);
     expect(text).toContain("not found");
   });
+
+  it("uses the caller's course reference and renders the newest announcements even when Moodle returns them unordered", async () => {
+    const client = await makeClient();
+    const now = Math.floor(Date.now() / 1000);
+    const suppliedRef = "r_course_from_list";
+    const sealer: SubRefSealer = { siteId: "other-site", courseRef: suppliedRef, seal: async (_kind, id) => `r_new_${id}` };
+
+    mockFetch.mockImplementation(routedFetchMock({
+      core_enrol_get_users_courses: [COURSE],
+      core_course_get_contents: [{ id: 2722, name: "Week 10", summary: "", modules: [] }],
+      mod_assign_get_assignments: { courses: [{ id: 2722, assignments: [] }] },
+      gradereport_user_get_grade_items: { usergrades: [{ courseid: 2722, gradeitems: [] }] },
+      mod_forum_get_forums_by_courses: [{ id: 4445, cmid: 1, course: 2722, name: "Announcements", type: "news" }],
+      mod_forum_get_forum_discussions: {
+        discussions: [
+          { id: 1, discussion: 1, name: "Week 1", userfullname: "Prof X", numreplies: 0, timemodified: now - 3, pinned: false },
+          { id: 2, discussion: 2, name: "Week 10", userfullname: "Prof X", numreplies: 0, timemodified: now, pinned: false },
+          { id: 3, discussion: 3, name: "Week 9", userfullname: "Prof X", numreplies: 0, timemodified: now - 1, pinned: false },
+          { id: 4, discussion: 4, name: "Week 8", userfullname: "Prof X", numreplies: 0, timemodified: now - 2, pinned: false },
+        ],
+      },
+    }));
+
+    const text = await courseOverview(client, 2722, sealer);
+
+    expect(text).toContain(`Course ID: \`${suppliedRef}\``);
+    expect(text).toContain("Week 10");
+    expect(text).toContain("Week 9");
+    expect(text).toContain("Week 8");
+    expect(text).not.toMatch(/\*\*Week 1\*\*/);
+  });
 });
 
 describe("upcomingAndOverdue", () => {

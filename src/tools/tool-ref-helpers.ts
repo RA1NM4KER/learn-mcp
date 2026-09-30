@@ -42,6 +42,8 @@ export async function withResolvedRef(
 /** Seals a sub-resource id belonging to the course just resolved, for embedding in a listing's rendered output. */
 export interface SubRefSealer {
   siteId: string;
+  /** The exact validated course reference supplied by the caller, for composed views that echo it. */
+  courseRef?: number | string;
   seal: (kind: GlobalRefKind, id: number) => Promise<number | string>;
 }
 
@@ -53,6 +55,10 @@ export async function withResolvedCourseListing(
 ): Promise<ToolResult> {
   const resolved = await resolver.resolve("course", courseRef);
   if (!resolved.ok) return errorResult(resolved.message);
-  const sealer: SubRefSealer = { siteId: resolved.siteId, seal: (kind, id) => resolver.sealIfNeeded(kind, resolved.siteId, id) };
+  const sealer: SubRefSealer = {
+    siteId: resolved.siteId,
+    courseRef,
+    seal: (kind, id) => resolver.sealIfNeeded(kind, resolved.siteId, id),
+  };
   return { content: [{ type: "text", text: await render(resolved.client, resolved.id, sealer) }] };
 }

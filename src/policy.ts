@@ -15,6 +15,8 @@ export const CALENDAR_EVENT_POLICY = { maxRendered: 100 } as const;
 export const COURSE_NOTICE_POLICY = { maxRendered: 10 } as const;
 export const COMPOSED_TASK_POLICY = {
   maxRendered: 100,
+  maxFetchedRecentAnnouncements: 100,
+  maxRenderedRecentAnnouncements: 3,
   submissionStatusConcurrency: 4,
   maxHistoricalRendered: 20,
 } as const;
