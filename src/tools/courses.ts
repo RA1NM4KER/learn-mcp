@@ -11,12 +11,24 @@ export interface CourseNotice {
   sectionName: string;
   text: string;
   activity?: string;
+  classification: "current" | "recent" | "historical";
 }
 
 const NOTICE_TERMS = /\b(deadline|due|submit|submission|demonstration|rsvp|practical|test)\b/i;
 const PRIORITY_NOTICE_TERMS = /\b(deadline|due|submit|submission|rsvp)\b/i;
 const NOTICE_DATE = /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday,?\s+)?(\d{1,2}\s+(?:january|february|march|april|may|june|july|august|september|october|november|december))\b/gi;
 const NOTICE_ACTIVITY = /\b(?:practical|assignment|test)\s*\d+\b/i;
+
+function classifyNotice(text: string): CourseNotice["classification"] {
+  const match = NOTICE_DATE.exec(text);
+  NOTICE_DATE.lastIndex = 0;
+  if (!match?.[1]) return "recent";
+  const date = Date.parse(`${match[1]} ${new Date().getFullYear()}`);
+  if (Number.isNaN(date)) return "recent";
+  const ageDays = (date - Date.now()) / 86_400_000;
+  if (ageDays < -14) return "historical";
+  return ageDays <= 14 ? "current" : "recent";
+}
 
 function noticeExcerpt(text: string): string {
   const priority = /\b(deadline|due|rsvp)\b/i.exec(text) ?? PRIORITY_NOTICE_TERMS.exec(text);
@@ -131,19 +143,27 @@ export async function getCourseNoticesRaw(client: MoodleClient, courseId: number
     return [{
       sectionName: truncateText(section.name || "General", TEXT_OUTPUT_POLICY.maxLabelCharacters),
       text: noticeExcerpt(text),
+      classification: classifyNotice(text),
       ...(activity ? { activity } : {}),
     }];
-  }).slice(0, COURSE_NOTICE_POLICY.maxRendered);
+  }).sort((a, b) => (a.classification === "current" ? 0 : a.classification === "recent" ? 1 : 2) - (b.classification === "current" ? 0 : b.classification === "recent" ? 1 : 2)).slice(0, COURSE_NOTICE_POLICY.maxRendered);
 }
 
 export async function getCourseNotices(client: MoodleClient, courseId: number): Promise<string> {
   const notices = await getCourseNoticesRaw(client, courseId);
   if (notices.length === 0) return "No current deadline or practical notices were found in course-section summaries.";
   const lines = [`## Current Course Notices: Course ${courseId}`, ""];
-  if (hasConflictingNoticeDates(notices)) {
+  const current = notices.filter((notice) => notice.classification === "current");
+  const recent = notices.filter((notice) => notice.classification === "recent");
+  const historical = notices.filter((notice) => notice.classification === "historical");
+  if (hasConflictingNoticeDates(current)) {
     lines.push("⚠️ **Conflicting deadline dates appear in course-section notices.** The notices below are shown with their section source; verify the applicable date with the lecturer before relying on an older PDF or post.", "");
   }
-  for (const notice of notices) lines.push(`### ${notice.sectionName}`, notice.text, "");
+  for (const [label, group] of [["Current", current], ["Recent", recent], ["Historical", historical]] as const) {
+    if (group.length === 0) continue;
+    lines.push(`### ${label}`);
+    for (const notice of group) lines.push(`#### ${notice.sectionName}`, notice.text, "");
+  }
   lines.push("_These are current course-section notices. If an attachment or forum post has a conflicting date, verify with the lecturer._");
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }

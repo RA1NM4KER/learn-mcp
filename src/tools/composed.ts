@@ -10,6 +10,7 @@ import type { MoodleAssignment, MoodleCourse } from "../moodle-api.js";
 import { truncateText } from "../text.js";
 import { formatMoodleDateTime } from "../format-date.js";
 import { mapAccountWideSites, type ConnectedSite, type MultiSiteContext } from "../multi-site-context.js";
+import { getNotificationsAccountWide } from "./notifications.js";
 
 // Composed, read-only tools that merge a few raw Moodle calls into one
 // normalized, student-shaped answer. Deterministic date/status merging only —
@@ -51,13 +52,14 @@ export async function courseOverview(client: MoodleClient, courseId: number, sea
   lines.push("", "### Current course notices");
   try {
     const notices = await getCourseNoticesRaw(client, courseId);
-    if (notices.length === 0) {
+    const currentNotices = notices.filter((notice) => notice.classification === "current");
+    if (currentNotices.length === 0) {
       lines.push("No current deadline or practical notices found in course-section summaries.");
     } else {
-      if (hasConflictingNoticeDates(notices)) {
+      if (hasConflictingNoticeDates(currentNotices)) {
         lines.push("⚠️ **Conflicting deadline dates appear in current course notices; verify the applicable date with the lecturer.**");
       }
-      for (const notice of notices.slice(0, 3)) {
+      for (const notice of currentNotices.slice(0, 3)) {
         lines.push(`- **${notice.sectionName}:** ${notice.text}`);
       }
       lines.push("_Use current course notices to verify conflicts with older PDFs or forum posts._");
@@ -428,6 +430,17 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
+/** Compact, student-intent entrypoint. It deliberately composes authoritative
+ * deadline state and recent notifications instead of asking an agent to infer
+ * urgency from raw Moodle entities. */
+export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteContext): Promise<string> {
+  const [deadlines, notifications] = await Promise.all([
+    upcomingAndOverdue(client, multiSite),
+    multiSite ? getNotificationsAccountWide(client, multiSite, 10) : Promise.resolve("Notifications unavailable."),
+  ]);
+  return truncateText(`## Student Brief\n\n### Deadlines\n${deadlines}\n\n### Recent notifications\n${notifications}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
+}
+
 export function registerComposedTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver, multiSite?: MultiSiteContext): void {
   server.tool(
     "course_overview",
@@ -443,5 +456,12 @@ export function registerComposedTools(server: McpServer, client: MoodleClient, c
     async () => ({
       content: [{ type: "text" as const, text: await upcomingAndOverdue(client, multiSite) }],
     }),
+  );
+
+  server.tool(
+    "student_brief",
+    "Compact cross-course catch-up: authoritative deadline state plus recent notifications. Use for 'what should I know?', 'catch me up', or 'what needs my attention?'.",
+    {},
+    async () => ({ content: [{ type: "text" as const, text: await studentBrief(client, multiSite) }] }),
   );
 }

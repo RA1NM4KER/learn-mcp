@@ -121,6 +121,18 @@ describe("getCourseNotices", () => {
     expect(result).toContain("25 September at 23:59");
   });
 
+  it("separates expired dated notices from current ones and only checks current notices for conflicts", async () => {
+    const client = await makeClient();
+    mockFetch.mockResolvedValueOnce(jsonResponse([
+      { id: 1, name: "Week 1", summary: "<p>Practical 2 due 27 August.</p>", modules: [] },
+      { id: 2, name: "Week 9", summary: "<p>Practical 2 due 1 October.</p>", modules: [] },
+    ]));
+    const result = await getCourseNotices(client, 2722);
+    expect(result).toContain("### Current");
+    expect(result).toContain("### Historical");
+    expect(result).not.toContain("Conflicting deadline dates appear");
+  });
+
   it("flags conflicting deadline dates from different section notices", () => {
     expect(hasConflictingNoticeDates([
       { sectionName: "Week 7", text: "The final submission deadline for Practical 2 is 25 September at 23:59." },

@@ -18,6 +18,7 @@ describe("shared MCP server factory", () => {
     expect(Object.keys(server._registeredTools)).toContain("moodle_list_courses");
     expect(Object.keys(server._registeredTools)).toContain("moodle_download_file");
     expect(Object.keys(server._registeredTools)).toContain("upcoming_and_overdue");
+    expect(Object.keys(server._registeredTools)).toContain("student_brief");
     expect(Object.keys(server._registeredPrompts)).toEqual(expect.arrayContaining([
       "summarize-course", "whats-due", "build-study-notes", "exam-prep", "search-notes",
     ]));
