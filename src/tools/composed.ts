@@ -446,19 +446,25 @@ export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteCo
   const actionableDeadlines = deadlines
     .split("### 🗄️ Historical course content")[0]!
     .replace(/, assignment ID: `[^`]+`, course ID: `[^`]+`/g, "");
-  const calendarOnly: string[] = [];
+  const calendarGroups = new Map<string, string[]>();
+  let courseHeading = "";
   let includeDetail = false;
   for (const line of calendar.split("\n")) {
     if (line.startsWith("## ")) continue;
-    if (line.startsWith("### ")) { calendarOnly.push(line); includeDetail = false; continue; }
+    if (line.startsWith("### ")) { courseHeading = line; includeDetail = false; continue; }
     if (line.startsWith("- ")) {
       includeDetail = !/`attendance`|assignment \(authoritative\)/i.test(line);
-      if (includeDetail) calendarOnly.push(line);
+      if (includeDetail && courseHeading) {
+        const group = calendarGroups.get(courseHeading) ?? [];
+        group.push(line);
+        calendarGroups.set(courseHeading, group);
+      }
       continue;
     }
-    if (includeDetail && line.startsWith("  ")) calendarOnly.push(line);
+    if (includeDetail && line.startsWith("  ") && courseHeading) calendarGroups.get(courseHeading)?.push(line);
   }
-  const calendarSection = calendarOnly.some((line) => line.startsWith("- "))
+  const calendarOnly = [...calendarGroups.entries()].flatMap(([heading, lines]) => [heading, ...lines]);
+  const calendarSection = calendarOnly.length > 0
     ? `\n\n### Quiz and practical closures\n${calendarOnly.join("\n")}`
     : "";
   return truncateText(`## Student Brief\n\n### Deadlines\n${actionableDeadlines}${calendarSection}\n\n### Recent notifications\n${notifications}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
