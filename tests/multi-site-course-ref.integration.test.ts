@@ -6,6 +6,7 @@ import { GlobalRefStore } from "../src/global-ref.js";
 import { registerGradeTools } from "../src/tools/grades.js";
 import { registerAssignmentTools } from "../src/tools/assignments.js";
 import { registerFileTools } from "../src/tools/files.js";
+import { registerDownloadTool } from "../src/tools/download.js";
 import { registerComposedTools } from "../src/tools/composed.js";
 import { getSiteById } from "../src/sunlearn-sites.js";
 import type { MultiSiteContext } from "../src/multi-site-context.js";
@@ -151,9 +152,9 @@ describe("opaque course ref flowing from listing into every course-scoped tool",
 
     expect(result.isError).toBeFalsy();
     expect(result.content[0]!.text).toContain("reading.pdf");
-    // Cross-site downloads aren't wired up yet (moodle_download_file is anchor-only) — this must
-    // say so rather than hand out a fileId that will just fail later.
-    expect(result.content[0]!.text).toContain("download not yet supported");
+    // A non-anchor site mints a real, usable fileId (see the download dispatch tests below).
+    expect(result.content[0]!.text).not.toContain("download not yet supported");
+    expect(result.content[0]!.text).toMatch(/fileId: `[^`]+`/);
   });
 
   it("course_overview dispatches a sealed EMSLearn course ref to EMSLearn", async () => {
@@ -366,5 +367,128 @@ describe("upcoming_and_overdue against the exact production topology that reprod
     // Financial Accounting 178's course/assignment ids belong to EMSLearn, not the anchor — must be sealed.
     expect(text).toMatch(/assignment ID: `r_/);
     expect(text).toMatch(/course ID: `r_/);
+  });
+});
+
+describe("moodle_download_file dispatch across linked sites", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const emsFileUrl = "https://emslearn.sun.ac.za/pluginfile.php/1/mod_resource/content/1/reading.pdf";
+  const stemFileUrl = "https://stemlearn.sun.ac.za/pluginfile.php/1/mod_resource/content/1/notes.txt";
+  const contents = (fileurl: string, filename: string, mimetype: string) => [
+    { id: 100, name: "Week 1", modules: [{ id: 5, name: "Reading", modname: "resource", contents: [{ type: "file", filename, fileurl, filesize: 4, mimetype }] }] },
+  ];
+
+  function fileResponse(mime: string, body: string) {
+    return Promise.resolve({ ok: true, headers: new Headers({ "content-type": mime }), arrayBuffer: async () => new TextEncoder().encode(body).buffer });
+  }
+
+  /** Routes API calls (POST body) via wsfunction and pluginfile downloads (GET with token) per host. */
+  function installRoutes(opts: { emsContents: unknown; emsDownloads?: string[] }) {
+    mockFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const u = new URL(String(url));
+      if (u.pathname.includes("pluginfile.php")) {
+        opts.emsDownloads?.push(`${u.host}${u.pathname}?token=${u.searchParams.get("token")}`);
+        return fileResponse("application/pdf", "%PDF");
+      }
+      return routedFetch({
+        "stemlearn.sun.ac.za": { core_webservice_get_site_info: siteInfo("STEMLearn"), core_course_get_contents: [] },
+        "emslearn.sun.ac.za": { core_webservice_get_site_info: siteInfo("EMSLearn"), core_course_get_contents: opts.emsContents },
+      })(url, init);
+    });
+  }
+
+  async function setup() {
+    const { resolver, refStore, anchorClient } = await makeResolver();
+    const multiSite: MultiSiteContext = {
+      anchorSite: { id: "stemlearn", name: "STEMLearn" },
+      additionalSites: [{ site: getSiteById("emslearn")!, config: emsConfig() }],
+      seal: (kind, siteId, id) => resolver.sealIfNeeded(kind, siteId, id),
+    };
+    const sealedRef = await refStore.seal({ userId: "user1", siteId: "emslearn", kind: "course", id: 100 });
+    const { server, handlers } = captureTool();
+    registerFileTools(server, resolver);
+    registerDownloadTool(server, anchorClient, true, multiSite);
+    return { anchorClient, handlers, sealedRef };
+  }
+
+  async function listedFileId(handlers: ReturnType<typeof captureTool>["handlers"], courseId: unknown): Promise<string> {
+    const listing = await handlers.get("moodle_list_resources")!({ courseId });
+    const id = /fileId: `([^`]+)`/.exec(listing.content[0]!.text)?.[1];
+    expect(id).toBeDefined();
+    return id!;
+  }
+
+  it("downloads, via moodle_download_file, a fileId listed for a secondary-site course, using that site's token", async () => {
+    const downloads: string[] = [];
+    installRoutes({ emsContents: contents(emsFileUrl, "reading.pdf", "application/pdf"), emsDownloads: downloads });
+    const { handlers, sealedRef } = await setup();
+
+    const fileId = await listedFileId(handlers, sealedRef);
+    const result = await handlers.get("moodle_download_file")!({ fileId });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0]!.text).toContain("reading.pdf");
+    expect(result.content[0]!.text).toContain("application/pdf");
+    expect(downloads).toEqual(["emslearn.sun.ac.za/pluginfile.php/1/mod_resource/content/1/reading.pdf?token=ems-tok"]);
+  });
+
+  it("still lists and downloads anchor-site files through the anchor client", async () => {
+    const { handlers } = await setup();
+    mockFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const u = new URL(String(url));
+      if (u.pathname.includes("pluginfile.php")) {
+        expect(u.searchParams.get("token")).toBe("stem-tok");
+        return fileResponse("text/plain", "hello");
+      }
+      return routedFetch({ "stemlearn.sun.ac.za": { core_course_get_contents: contents(stemFileUrl, "notes.txt", "text/plain") } })(url, init);
+    });
+
+    const fileId = await listedFileId(handlers, 100);
+    const result = await handlers.get("moodle_download_file")!({ fileId });
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0]!.text).toContain("hello");
+  });
+
+  it("rejects a fileId minted by an unrelated site (not the anchor, not a linked site)", async () => {
+    installRoutes({ emsContents: contents(emsFileUrl, "reading.pdf", "application/pdf") });
+    const { handlers } = await setup();
+    const { FileIdStore } = await import("../src/file-id-store.js");
+    const foreignId = await new FileIdStore("some-other-site-token").seal({ userId: 1, courseId: 100, fileurl: emsFileUrl, mime: "application/pdf", filename: "reading.pdf", filesize: 4 });
+
+    const result = await handlers.get("moodle_download_file")!({ fileId: foreignId });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toMatch(/invalid, expired/);
+  });
+
+  it("rejects malformed and other-user fileIds without reaching any pluginfile download", async () => {
+    const downloads: string[] = [];
+    installRoutes({ emsContents: contents(emsFileUrl, "reading.pdf", "application/pdf"), emsDownloads: downloads });
+    const { handlers } = await setup();
+    const { FileIdStore } = await import("../src/file-id-store.js");
+    const otherUserId = await new FileIdStore("ems-tok").seal({ userId: 2, courseId: 100, fileurl: emsFileUrl, mime: "application/pdf", filename: "reading.pdf", filesize: 4 });
+    const expired = await new FileIdStore("ems-tok", -1).seal({ userId: 1, courseId: 100, fileurl: emsFileUrl, mime: "application/pdf", filename: "reading.pdf", filesize: 4 });
+
+    for (const fileId of ["bad", otherUserId, expired]) {
+      const result = await handlers.get("moodle_download_file")!({ fileId });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toMatch(/invalid, expired/);
+    }
+    expect(downloads).toEqual([]);
+  });
+
+  it("still re-checks current course access on the owning site, and does not fall through to other sites on denial", async () => {
+    const downloads: string[] = [];
+    installRoutes({ emsContents: contents(emsFileUrl, "reading.pdf", "application/pdf"), emsDownloads: downloads });
+    const { handlers, sealedRef } = await setup();
+    const fileId = await listedFileId(handlers, sealedRef);
+
+    // Access revoked: the course no longer contains that file.
+    installRoutes({ emsContents: [], emsDownloads: downloads });
+    const result = await handlers.get("moodle_download_file")!({ fileId });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toMatch(/invalid, expired/);
+    expect(downloads).toEqual([]);
   });
 });

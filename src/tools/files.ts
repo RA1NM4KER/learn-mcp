@@ -19,7 +19,6 @@ function formatSize(bytes: number): string {
 async function listResources(
   client: MoodleClient,
   courseId: number,
-  isAnchor: boolean,
   contentEnabled: boolean,
   filenameFilter?: string,
   limit: number = RESOURCE_LIST_POLICY.defaultEntries,
@@ -69,12 +68,6 @@ async function listResources(
           sectionLines.push(`- 📄 **${truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** *(${size})*, file downloads are not currently available`);
           continue;
         }
-        if (!isAnchor) {
-          // moodle_download_file only dispatches to the anchor site so far (see download.ts) —
-          // don't hand out a fileId that would just fail there.
-          sectionLines.push(`- 📄 **${truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** *(${size})*, download not yet supported for this environment`);
-          continue;
-        }
         const fileId = await client.fileIdStore.seal({ userId: client.userId, courseId, fileurl: file.fileurl, mime, filename: file.filename, filesize: file.filesize });
         sectionLines.push(`- 📄 **${truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** *(${size})*, fileId: \`${fileId}\`, resource: \`moodle://files/${fileId}\``);
       }
@@ -119,7 +112,7 @@ export function registerFileTools(server: McpServer, courseRefResolver: CourseRe
       const resolved = await courseRefResolver.resolve("course", courseId);
       if (!resolved.ok) return { isError: true, content: [{ type: "text" as const, text: resolved.message }] };
       return {
-        content: [{ type: "text" as const, text: await listResources(resolved.client, resolved.id, resolved.isAnchor, contentEnabled, filenameFilter, limit) }],
+        content: [{ type: "text" as const, text: await listResources(resolved.client, resolved.id, contentEnabled, filenameFilter, limit) }],
       };
     },
   );

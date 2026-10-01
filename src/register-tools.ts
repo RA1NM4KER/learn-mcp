@@ -23,7 +23,7 @@ export function registerAllTools(
 ): void {
   registerCourseTools(server, client, courseRefResolver, multiSite);
   registerFileTools(server, courseRefResolver, contentEnabled);
-  registerDownloadTool(server, client, contentEnabled);
+  registerDownloadTool(server, client, contentEnabled, multiSite);
   registerAssignmentTools(server, courseRefResolver);
   registerGradeTools(server, courseRefResolver);
   registerCalendarTools(server, client, courseRefResolver, multiSite);

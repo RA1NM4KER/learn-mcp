@@ -1,13 +1,43 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { MoodleClient } from "../moodle-client.js";
 import { bytesToBase64, isTextMime } from "../content.js";
-import { MoodleTimeoutError } from "../moodle-client.js";
+import { MoodleClient, MoodleTimeoutError } from "../moodle-client.js";
+import type { MultiSiteContext } from "../multi-site-context.js";
 import { TEXT_OUTPUT_POLICY } from "../policy.js";
 import { truncateText } from "../text.js";
 
+type Authorized = NonNullable<Awaited<ReturnType<MoodleClient["downloadAuthorizedFile"]>>>;
+
+/**
+ * A fileId is sealed with the minting site's own token-derived key, so only
+ * that site's client can open it (a wrong site's open() returns null). Finds
+ * the owning client — anchor first, then each additional linked site — and
+ * lets THAT client's downloadAuthorizedFile() re-check current course access.
+ * Once a client opens the id, its result/errors are final: no other site is tried.
+ */
+async function downloadFromOwningSite(
+  anchor: MoodleClient,
+  multiSite: MultiSiteContext | undefined,
+  fileId: string,
+): Promise<Authorized | null> {
+  if (await anchor.fileIdStore.open(fileId, anchor.userId)) return anchor.downloadAuthorizedFile(fileId);
+
+  let buildError: unknown;
+  for (const { config } of multiSite?.additionalSites ?? []) {
+    let candidate: MoodleClient;
+    try { candidate = await MoodleClient.create(config); } catch (err) {
+      // An unreachable unrelated site must not mask the owner, but if nobody claims the id, surface this.
+      buildError ??= err;
+      continue;
+    }
+    if (await candidate.fileIdStore.open(fileId, candidate.userId)) return candidate.downloadAuthorizedFile(fileId);
+  }
+  if (buildError) throw buildError;
+  return null;
+}
+
 /** Not registered at all when disabled — see REMOTE_COURSE_CONTENT_ENABLED (oauth/env.ts) — so the MCP tool list itself accurately reflects that full file retrieval is unavailable, not just an error message on call. */
-export function registerDownloadTool(server: McpServer, client: MoodleClient, contentEnabled = true): void {
+export function registerDownloadTool(server: McpServer, client: MoodleClient, contentEnabled = true, multiSite?: MultiSiteContext): void {
   if (!contentEnabled) return;
   server.tool(
     "moodle_download_file",
@@ -17,7 +47,7 @@ export function registerDownloadTool(server: McpServer, client: MoodleClient, co
     },
     async ({ fileId }) => {
       let authorized;
-      try { authorized = await client.downloadAuthorizedFile(fileId); } catch (err) {
+      try { authorized = await downloadFromOwningSite(client, multiSite, fileId); } catch (err) {
         const message = err instanceof MoodleTimeoutError
           ? err.message : "File download failed. Please try again.";
         return { isError: true, content: [{ type: "text" as const, text: message }] };
