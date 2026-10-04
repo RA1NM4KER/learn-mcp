@@ -26,6 +26,8 @@ export const FileRefSchema = z.object({
   // Set only for file attachments from a submission (moodle_list_assignment_submissions).
   // Those are authorised against the assignment's submissions, not course contents.
   assignmentId: SafePositiveInteger.optional(),
+  // The student (or any group member) whose submission status authorises the file.
+  submitterId: SafePositiveInteger.optional(),
 }).strict();
 export type FileRef = z.infer<typeof FileRefSchema>;
 

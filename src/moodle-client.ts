@@ -1,7 +1,7 @@
 import type { Config } from "./config.js";
 import { DEFAULT_MAX_FILE_MB, DEFAULT_REQUEST_TIMEOUT_MS } from "./config.js";
 import { FileIdStore, type FileRef } from "./file-id-store.js";
-import { isMoodleFileContent, MoodleAssignSubmissionsResponseSchema, MoodleCourseContentsSchema, MoodleErrorResponseSchema, MoodleLoginResponseSchema, MoodleSiteInfoSchema } from "./moodle-api.js";
+import { isMoodleFileContent, MoodleAssignSubmissionStatusSchema, MoodleAssignSubmissionsResponseSchema, MoodleCourseContentsSchema, MoodleErrorResponseSchema, MoodleLoginResponseSchema, MoodleSiteInfoSchema } from "./moodle-api.js";
 import type { z } from "zod";
 
 export interface DownloadedFile {
@@ -203,16 +203,29 @@ export class MoodleClient {
         // Submission attachments are authorised by the assignment's current
         // submissions. A failed call (no grading access, submission removed)
         // denies the file, the same as a missing course file.
+        const hasFile = (plugins: { fileareas: { files: { fileurl: string }[] }[] }[]) =>
+          plugins.some((plugin) => plugin.fileareas.some((area) => area.files.some((file) => file.fileurl === ref.fileurl)));
+        if (ref.submitterId !== undefined) {
+          // Per-student status: cheap, and it only covers the one submitter.
+          const status = await this.call(
+            "mod_assign_get_submission_status",
+            { assignid: ref.assignmentId, userid: ref.submitterId },
+            MoodleAssignSubmissionStatusSchema,
+          );
+          const submissions = [
+            status.lastattempt?.submission,
+            status.lastattempt?.teamsubmission,
+            ...status.previousattempts.map((attempt) => attempt.submission),
+          ];
+          return submissions.some((submission) => submission !== undefined && hasFile(submission.plugins)) ? ref : null;
+        }
+        // Fileids minted before submitterId existed: the whole-assignment check.
         const response = await this.call(
           "mod_assign_get_submissions",
           { "assignmentids[0]": ref.assignmentId },
           MoodleAssignSubmissionsResponseSchema,
         );
-        const found = response.assignments.some((assignment) => assignment.submissions.some((submission) =>
-          submission.plugins.some((plugin) => plugin.fileareas.some((area) =>
-            area.files.some((file) => file.fileurl === ref.fileurl),
-          )),
-        ));
+        const found = response.assignments.some((assignment) => assignment.submissions.some((submission) => hasFile(submission.plugins)));
         return found ? ref : null;
       }
       const sections = await this.call("core_course_get_contents", { courseid: ref.courseId }, MoodleCourseContentsSchema);

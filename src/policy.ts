@@ -30,6 +30,7 @@ export const SUBMISSION_POLICY = {
   maxRenderedRows: 100,
   maxAttemptsPerSubmission: 5,
   maxFilesPerAttempt: 20,
+  statusConcurrency: 4,
 } as const;
 export const MULTI_SITE_POLICY = { fanOutConcurrency: 4 } as const;
 

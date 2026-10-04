@@ -179,8 +179,13 @@ Moodle web services used (all read-only):
 - `mod_assign_list_participants`: paged roster used for student-number matching
   and group filtering. Student numbers come from the `idnumber` field, which
   Moodle returns only when the account may see it.
-- `mod_assign_get_submissions`: submissions, attempts, and attachments. Also
-  used to re-check every submission `fileId` before download.
+- `mod_assign_get_submission_status`: one student's submission, earlier
+  attempts, and attachments. Used for every student the list shows, and to
+  re-check each submission `fileId` before download. Calls are per student, so
+  a large assignment is not fetched whole.
+- `mod_assign_get_submissions` is only used to check `fileId`s minted before
+  per-student checks existed. Those expire within 24 hours; re-run the list
+  to get fresh IDs.
 
 The account needs grading capability on the assignment (for example, the
 Teacher or Grader role on the course). No admin credentials are used, and no
@@ -196,6 +201,12 @@ Limitations:
 - Submission `fileId`s expire after 24 hours, like course file IDs. Run the
   list again to get fresh ones.
 - Online-text submissions are not rendered; only file attachments are listed.
+- Team assignments show the group's latest submission only. Earlier group
+  attempts are not listed yet.
+- If a lookup times out, the error names the step that stalled. Raise
+  `MOODLE_MCP_REQUEST_TIMEOUT_MS` (up to 120000) to allow slower Moodle
+  responses. Each step's duration is logged to stderr as
+  `[submissions] <step>: <ms>`.
 - Live verification against STEMLearn has not been performed for this tool
   set. The Moodle function parameters above follow Moodle's documented
   web-service shapes and are covered by mocked tests only.

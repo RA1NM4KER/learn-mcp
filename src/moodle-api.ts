@@ -229,3 +229,19 @@ export const MoodleAssignSubmissionsResponseSchema = MoodleObject.extend({
     submissions: z.array(MoodleAssignSubmissionSchema).optional().default([]),
   })).optional().default([]),
 });
+
+// mod_assign_get_submission_status for one student (or a group member). Much
+// cheaper than mod_assign_get_submissions, which returns every submission
+// in the assignment and timed out on a real Practical 3 lookup.
+const MoodleStatusSubmissionSchema = MoodleAssignSubmissionSchema;
+export const MoodleAssignSubmissionStatusSchema = MoodleObject.extend({
+  lastattempt: MoodleObject.extend({
+    submission: MoodleStatusSubmissionSchema.optional(),
+    teamsubmission: MoodleStatusSubmissionSchema.optional(),
+  }).optional(),
+  previousattempts: z.array(MoodleObject.extend({
+    attemptnumber: z.number().optional().default(0),
+    submission: MoodleStatusSubmissionSchema.optional(),
+  })).optional().default([]),
+});
+export type MoodleAssignSubmissionStatus = z.infer<typeof MoodleAssignSubmissionStatusSchema>;

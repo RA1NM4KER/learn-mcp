@@ -6,11 +6,11 @@ import type { MoodleAssignParticipant, MoodleAssignSubmission } from "../moodle-
 import {
   loadAssignmentGroups,
   loadAssignmentParticipants,
-  loadAssignmentSubmissions,
+  loadAssignmentSubmissionStatus,
   loadAssignments,
 } from "../moodle-loaders.js";
 import { RefSchema } from "./tool-ref-helpers.js";
-import { SUBMISSION_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
+import { mapWithConcurrency, SUBMISSION_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { truncateText } from "../text.js";
 import { formatMoodleDateTime } from "../format-date.js";
 
@@ -173,12 +173,31 @@ interface Unit {
   attempts: MoodleAssignSubmission[];
 }
 
-function unitFor(ctx: AssignmentContext, participant: MoodleAssignParticipant, submissions: MoodleAssignSubmission[]): Unit {
+/** One student's submissions, from mod_assign_get_submission_status (cheap, per student). */
+interface StudentSubmissions {
+  individual: MoodleAssignSubmission[];
+  /** The group's latest submission on a team assignment. Earlier group attempts are not listed. */
+  team: MoodleAssignSubmission | undefined;
+}
+
+async function fetchStudentSubmissions(ctx: AssignmentContext, participant: MoodleAssignParticipant): Promise<StudentSubmissions> {
+  const status = await loadAssignmentSubmissionStatus(ctx.client, ctx.assignmentId, participant.id);
+  const candidates = [status.lastattempt?.submission, ...status.previousattempts.map((attempt) => attempt.submission)];
+  const seen = new Set<number>();
+  const individual: MoodleAssignSubmission[] = [];
+  for (const submission of candidates) {
+    if (!submission || seen.has(submission.id)) continue;
+    seen.add(submission.id);
+    individual.push(submission);
+  }
+  return { individual, team: status.lastattempt?.teamsubmission };
+}
+
+function unitFor(ctx: AssignmentContext, participant: MoodleAssignParticipant, own: StudentSubmissions): Unit {
   if (ctx.teamSubmission) {
-    const memberGroupIds = new Set(participant.groups.map((g) => g.id));
-    const groupSubmission = submissions.find((s) => s.groupid !== 0 && memberGroupIds.has(s.groupid));
-    if (!groupSubmission) return { key: `none:${participant.id}`, label: "Student", shared: false, attempts: [] };
-    const groupId = groupSubmission.groupid;
+    const team = own.team;
+    if (!team || team.groupid === 0) return { key: `none:${participant.id}`, label: "Student", shared: false, attempts: [] };
+    const groupId = team.groupid;
     const name = participant.groups.find((g) => g.id === groupId)?.name
       ?? ctx.groups.find((g) => g.id === groupId)?.name
       ?? `group ${groupId}`;
@@ -186,14 +205,14 @@ function unitFor(ctx: AssignmentContext, participant: MoodleAssignParticipant, s
       key: `group:${groupId}`,
       label: truncateText(name, TEXT_OUTPUT_POLICY.maxLabelCharacters),
       shared: true,
-      attempts: submissions.filter((s) => s.groupid === groupId),
+      attempts: [team],
     };
   }
   return {
     key: `user:${participant.id}`,
     label: "Student",
     shared: false,
-    attempts: submissions.filter((s) => s.userid === participant.id),
+    attempts: own.individual,
   };
 }
 
@@ -201,20 +220,21 @@ function formatWhen(ts: number): string {
   return ts ? formatMoodleDateTime(ts) : "unknown time";
 }
 
-async function sealFile(client: MoodleClient, ctx: AssignmentContext, file: SubmissionFile): Promise<string> {
-  return client.fileIdStore.seal({
-    userId: client.userId,
+async function sealFile(ctx: AssignmentContext, submitterId: number, file: SubmissionFile): Promise<string> {
+  return ctx.client.fileIdStore.seal({
+    userId: ctx.client.userId,
     courseId: ctx.courseId,
     fileurl: file.fileurl,
     mime: file.mimetype || "application/octet-stream",
     filename: file.filename,
     filesize: file.filesize,
     assignmentId: ctx.assignmentId,
+    submitterId,
   });
 }
 
 /** Every attempt is shown, newest first, up to a cap. Nothing is selected silently. */
-async function renderAttempts(ctx: AssignmentContext, attempts: MoodleAssignSubmission[]): Promise<string[]> {
+async function renderAttempts(ctx: AssignmentContext, attempts: MoodleAssignSubmission[], submitterId: number): Promise<string[]> {
   if (attempts.length === 0) return ["- Not submitted"];
 
   const lines: string[] = [];
@@ -236,7 +256,7 @@ async function renderAttempts(ctx: AssignmentContext, attempts: MoodleAssignSubm
       const name = truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters);
       const mime = file.mimetype || "application/octet-stream";
       const idPart = ctx.contentEnabled
-        ? ` · fileId \`${await sealFile(ctx.client, ctx, file)}\``
+        ? ` · fileId \`${await sealFile(ctx, submitterId, file)}\``
         : "";
       lines.push(`  - ${name} (${mime}, ${file.filesize} bytes)${idPart}`);
     }
@@ -251,13 +271,13 @@ async function renderAttempts(ctx: AssignmentContext, attempts: MoodleAssignSubm
 }
 
 /** Renders a unit's attempts once. A later member of the same shared group gets a pointer instead of duplicate file IDs. */
-async function renderUnit(ctx: AssignmentContext, unit: Unit, rendered: Set<string>): Promise<string[]> {
+async function renderUnit(ctx: AssignmentContext, unit: Unit, submitterId: number, rendered: Set<string>): Promise<string[]> {
   if (rendered.has(unit.key)) {
     return [`  - Shared group submission (${unit.label}), listed above`];
   }
   rendered.add(unit.key);
   const heading = unit.shared ? `  - Shared group submission for ${unit.label}:` : "  Submission:";
-  const body = (await renderAttempts(ctx, unit.attempts)).map((line) => `    ${line}`);
+  const body = (await renderAttempts(ctx, unit.attempts, submitterId)).map((line) => `    ${line}`);
   return [heading, ...body];
 }
 
@@ -284,10 +304,7 @@ async function renderSubmissionReport(
   ctx: AssignmentContext,
   options: { numbers: string[]; group: Group | undefined },
 ): Promise<string> {
-  const { client } = ctx;
-  const scan = await timed("loading the participant list", () => scanParticipants(client, ctx.assignmentId, options.group?.id));
-  const submissionsResponse = await timed("loading submissions", () => loadAssignmentSubmissions(client, ctx.assignmentId));
-  const submissions = submissionsResponse.assignments.find((a) => a.assignmentid === ctx.assignmentId)?.submissions ?? [];
+  const scan = await timed("loading the participant list", () => scanParticipants(ctx.client, ctx.assignmentId, options.group?.id));
 
   const title = truncateText(ctx.assignmentName, TEXT_OUTPUT_POLICY.maxLabelCharacters);
   const lines: string[] = [`## Submissions: ${title} (assignment ${ctx.assignmentId})\n`];
@@ -296,49 +313,78 @@ async function renderSubmissionReport(
   if (!ctx.contentEnabled) lines.push(`_${NO_FILE_DOWNLOADS_NOTE}_`);
   lines.push("");
 
-  const rendered = new Set<string>();
-  const unitOf = (p: MoodleAssignParticipant) => unitFor(ctx, p, submissions);
+  // Decide who is shown first, so only those students' submission status is fetched.
+  type NumberResult =
+    | { number: string; kind: "inaccessible" | "unmatched" | "not-found" }
+    | { number: string; kind: "ambiguous"; matches: MoodleAssignParticipant[] }
+    | { number: string; kind: "matched"; participant: MoodleAssignParticipant };
+  let numberResults: NumberResult[] = [];
+  let listed: MoodleAssignParticipant[] = [];
+  let omittedParticipants = 0;
 
   if (options.numbers.length > 0) {
     // Moodle returns the student number on participants only when this account
     // is allowed to see it. If none came back, every lookup is inaccessible,
     // not unmatched.
     const numberVisible = scan.participants.some((p) => (p.idnumber?.trim() ?? "") !== "");
-    lines.push("### Student number lookups\n");
-    for (const number of options.numbers) {
-      if (!numberVisible) {
-        lines.push(`- \`${number}\`: **inaccessible**. Moodle did not return student numbers for this assignment's participants.`);
-        continue;
-      }
+    numberResults = options.numbers.map((number): NumberResult => {
+      if (!numberVisible) return { number, kind: "inaccessible" };
       const matches = scan.participants.filter((p) => p.idnumber?.trim() === number);
-      if (matches.length === 0) {
-        lines.push(scan.truncated
-          ? `- \`${number}\`: **not found** within the scanned participants (scan limit reached).`
-          : `- \`${number}\`: **unmatched**. No participant of this assignment has this student number.`);
-        continue;
+      if (matches.length === 0) return { number, kind: scan.truncated ? "not-found" : "unmatched" };
+      if (matches.length > 1) return { number, kind: "ambiguous", matches };
+      return { number, kind: "matched", participant: matches[0]! };
+    });
+    listed = numberResults.flatMap((r) => (r.kind === "matched" ? [r.participant] : []));
+  } else {
+    // Group listing with no number lookup. Shows the group's participants only, bounded by maxRenderedRows.
+    const ordered = [...scan.participants].sort((a, b) => (a.fullname || a.username).localeCompare(b.fullname || b.username));
+    listed = ordered.slice(0, SUBMISSION_POLICY.maxRenderedRows);
+    omittedParticipants = ordered.length - listed.length;
+  }
+
+  const fetched = new Map<number, StudentSubmissions>();
+  await timed("loading submission status", () => mapWithConcurrency(listed, SUBMISSION_POLICY.statusConcurrency, async (p) => {
+    fetched.set(p.id, await fetchStudentSubmissions(ctx, p));
+  }));
+
+  const rendered = new Set<string>();
+  const unitOf = (p: MoodleAssignParticipant) => unitFor(ctx, p, fetched.get(p.id) ?? { individual: [], team: undefined });
+
+  if (options.numbers.length > 0) {
+    lines.push("### Student number lookups\n");
+    for (const result of numberResults) {
+      const { number } = result;
+      switch (result.kind) {
+        case "inaccessible":
+          lines.push(`- \`${number}\`: **inaccessible**. Moodle did not return student numbers for this assignment's participants.`);
+          break;
+        case "not-found":
+          lines.push(`- \`${number}\`: **not found** within the scanned participants (scan limit reached).`);
+          break;
+        case "unmatched":
+          lines.push(`- \`${number}\`: **unmatched**. No participant of this assignment has this student number.`);
+          break;
+        case "ambiguous": {
+          const ids = result.matches.map((p) => p.id).join(", ");
+          lines.push(`- \`${number}\`: **ambiguous**, ${result.matches.length} participants share this student number (Moodle user IDs ${ids}). Nothing was selected or downloaded.`);
+          break;
+        }
+        case "matched":
+          lines.push(`- \`${number}\`: **matched**, ${describeParticipant(result.participant)}`);
+          lines.push(...(await renderUnit(ctx, unitOf(result.participant), result.participant.id, rendered)));
+          break;
       }
-      if (matches.length > 1) {
-        const ids = matches.map((p) => p.id).join(", ");
-        lines.push(`- \`${number}\`: **ambiguous**, ${matches.length} participants share this student number (Moodle user IDs ${ids}). Nothing was selected or downloaded.`);
-        continue;
-      }
-      const [participant] = matches as [MoodleAssignParticipant];
-      lines.push(`- \`${number}\`: **matched**, ${describeParticipant(participant)}`);
-      lines.push(...(await renderUnit(ctx, unitOf(participant), rendered)));
     }
     lines.push("");
   } else {
-    // Group listing with no number lookup. Shows the group's participants only, bounded by maxRenderedRows.
     const label = options.group ? truncateText(options.group.name, TEXT_OUTPUT_POLICY.maxLabelCharacters) : "all participants";
     lines.push(`### Participants in ${label}\n`);
-    const ordered = [...scan.participants].sort((a, b) => (a.fullname || a.username).localeCompare(b.fullname || b.username));
-    const shown = ordered.slice(0, SUBMISSION_POLICY.maxRenderedRows);
-    for (const participant of shown) {
+    for (const participant of listed) {
       lines.push(`- ${describeParticipant(participant)}`);
-      lines.push(...(await renderUnit(ctx, unitOf(participant), rendered)));
+      lines.push(...(await renderUnit(ctx, unitOf(participant), participant.id, rendered)));
     }
-    if (ordered.length > shown.length) {
-      lines.push(`_${ordered.length - shown.length} more participant(s) omitted; narrow the group filter or request specific student numbers._`);
+    if (omittedParticipants > 0) {
+      lines.push(`_${omittedParticipants} more participant(s) omitted; narrow the group filter or request specific student numbers._`);
     }
   }
 

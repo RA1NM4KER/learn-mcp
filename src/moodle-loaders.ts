@@ -4,6 +4,7 @@ import {
   MoodleDiscussionsResponseSchema, MoodleForumSchema, MoodleGradeReportSchema, MoodleNotificationsResponseSchema,
   MoodleQuizAttemptsResponseSchema, MoodleQuizzesResponseSchema, MoodleSubmissionStatusSchema,
   MoodleAllowedGroupsSchema, MoodleAssignParticipantsSchema, MoodleAssignSubmissionsResponseSchema,
+  MoodleAssignSubmissionStatusSchema,
 } from "./moodle-api.js";
 
 export const loadEnrolledCourses = (client: MoodleClient) =>
@@ -50,3 +51,6 @@ export const loadAssignmentParticipants = (client: MoodleClient, assignId: numbe
 
 export const loadAssignmentSubmissions = (client: MoodleClient, assignId: number) =>
   client.call("mod_assign_get_submissions", { "assignmentids[0]": assignId }, MoodleAssignSubmissionsResponseSchema);
+
+export const loadAssignmentSubmissionStatus = (client: MoodleClient, assignId: number, userId: number) =>
+  client.call("mod_assign_get_submission_status", { assignid: assignId, userid: userId }, MoodleAssignSubmissionStatusSchema);

@@ -43,6 +43,7 @@ function wire(overrides: Overrides = {}, assignment: Record<string, unknown> = {
     core_group_get_activity_allowed_groups: { groups: [WEDNESDAY, FRIDAY] },
     mod_assign_list_participants: () => participants(),
     mod_assign_get_submissions: { assignments: [{ assignmentid: 6326, submissions: submissions() }], warnings: [] },
+    mod_assign_get_submission_status: (body: URLSearchParams) => statusFor(Number(body.get("userid"))),
     ...overrides,
   };
   mockFetch.mockImplementation(async (url: string, init: { body?: URLSearchParams }) => {
@@ -55,6 +56,16 @@ function wire(overrides: Overrides = {}, assignment: Record<string, unknown> = {
     const data = typeof entry === "function" ? (entry as Handler)(init.body!) : entry;
     return json(data);
   });
+}
+
+/** The per-student status call: latest attempt plus earlier attempts, for one student. */
+function statusFor(userId: number) {
+  const own = submissions().filter((s) => s.userid === userId).sort((a, b) => b.attemptnumber - a.attemptnumber);
+  const [latest, ...earlier] = own;
+  return {
+    lastattempt: latest ? { submission: latest } : {},
+    previousattempts: earlier.map((s) => ({ attemptnumber: s.attemptnumber, submission: s })),
+  };
 }
 
 function participants() {
@@ -182,6 +193,18 @@ describe("moodle_list_assignment_submissions: exact student-number matching", ()
     expect(skips.slice(0, 3)).toEqual(["0", "100", "200"]);
   });
 
+  it("does not call the whole-assignment submissions endpoint on the list path", async () => {
+    // Regression: mod_assign_get_submissions returns every submission in the
+    // assignment and timed out on a real Practical 3 lookup. The list path
+    // must use the per-student status call only.
+    wire();
+    const c = await client();
+    await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["00123"] });
+    const called = mockFetch.mock.calls.map(([, init]) => (init as { body: URLSearchParams }).body.get("wsfunction"));
+    expect(called).not.toContain("mod_assign_get_submissions");
+    expect(called).toContain("mod_assign_get_submission_status");
+  });
+
   it("refuses more than 25 student numbers per call", async () => {
     wire();
     const c = await client();
@@ -269,11 +292,7 @@ describe("moodle_list_assignment_submissions: attempts, drafts, shared groups", 
     ];
     wire({
       mod_assign_list_participants: () => teamParticipants,
-      mod_assign_get_submissions: {
-        assignments: [{ assignmentid: 6326, submissions: [
-          { id: 9, userid: 0, groupid: 11, attemptnumber: 0, status: "submitted", latest: 1, timemodified: 1700000000, plugins: [fileAttachment()] },
-        ] }],
-      },
+      mod_assign_get_submission_status: { lastattempt: { teamsubmission: { id: 9, userid: 0, groupid: 11, attemptnumber: 0, status: "submitted", latest: 1, timemodified: 1700000000, plugins: [fileAttachment()] } }, previousattempts: [] },
     }, { teamsubmission: 1 });
     const c = await client();
     const text = textOf(await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["A100", "A101"] }));
@@ -288,7 +307,7 @@ describe("moodle_list_assignment_submissions: attempts, drafts, shared groups", 
   it("says when a student has no group submission on a team assignment", async () => {
     wire({
       mod_assign_list_participants: () => [{ id: 3001, fullname: "Loner", idnumber: "L1", groups: [] }],
-      mod_assign_get_submissions: { assignments: [{ assignmentid: 6326, submissions: [] }] },
+      mod_assign_get_submission_status: { previousattempts: [] },
     }, { teamsubmission: 1 });
     const c = await client();
     const text = textOf(await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["L1"] }));
@@ -322,7 +341,7 @@ describe("moodle_list_assignment_submissions: fileIds and permissions", () => {
 
   it("returns an explicit permission message without forwarding upstream text", async () => {
     wire({
-      mod_assign_get_submissions: { exception: "required_capability_exception", errorcode: "nopermissions", message: "Sorry, you do not have permission secret-detail" },
+      mod_assign_get_submission_status: { exception: "required_capability_exception", errorcode: "nopermissions", message: "Sorry, you do not have permission secret-detail" },
     });
     const c = await client();
     const result = await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["00123"] });
@@ -335,12 +354,12 @@ describe("moodle_list_assignment_submissions: fileIds and permissions", () => {
     // Regression: a stalled submissions request must say which step stalled,
     // so a slow lookup can be told apart from a slow participant list.
     const abort = () => { throw Object.assign(new Error("aborted"), { name: "AbortError" }); };
-    wire({ mod_assign_get_submissions: abort });
+    wire({ mod_assign_get_submission_status: abort });
     const c = await client();
     const result = await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["00123"] });
 
     expect(result.isError).toBe(true);
-    expect(textOf(result)).toContain("while loading submissions");
+    expect(textOf(result)).toContain("while loading submission status");
     expect(textOf(result)).toContain("MOODLE_MCP_REQUEST_TIMEOUT_MS");
   });
 
@@ -374,14 +393,14 @@ describe("submission fileIds in moodle_download_file (authorizeFile)", () => {
   it("denies a submission file that has been removed from the assignment", async () => {
     const c = await client();
     const sealed = await sealedFileId(c);
-    wire({ mod_assign_get_submissions: { assignments: [{ assignmentid: 6326, submissions: [] }] } });
+    wire({ mod_assign_get_submission_status: { previousattempts: [] } });
     expect(await c.authorizeFile(sealed)).toBeNull();
   });
 
   it("denies a submission file when Moodle refuses the grading lookup", async () => {
     const c = await client();
     const sealed = await sealedFileId(c);
-    wire({ mod_assign_get_submissions: { exception: "required_capability_exception", errorcode: "nopermissions", message: "no" } });
+    wire({ mod_assign_get_submission_status: { exception: "required_capability_exception", errorcode: "nopermissions", message: "no" } });
     expect(await c.authorizeFile(sealed)).toBeNull();
   });
 
