@@ -25,8 +25,8 @@ export const COMPOSED_TASK_POLICY = {
 /** Bounds for TA/grader submission lookups (moodle_list_assignment_submissions). */
 export const SUBMISSION_POLICY = {
   maxStudentNumbers: 25,
-  participantPageSize: 100,
-  maxParticipantPages: 20,
+  /** Upper bound on roster entries kept from one participant call. */
+  maxRosterSize: 5000,
   maxRenderedRows: 100,
   maxAttemptsPerSubmission: 5,
   maxFilesPerAttempt: 20,

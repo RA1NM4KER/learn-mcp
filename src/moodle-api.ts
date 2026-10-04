@@ -245,3 +245,12 @@ export const MoodleAssignSubmissionStatusSchema = MoodleObject.extend({
   })).optional().default([]),
 });
 export type MoodleAssignSubmissionStatus = z.infer<typeof MoodleAssignSubmissionStatusSchema>;
+
+// core_user_get_users_by_field(idnumber): only users whose idnumber this
+// account may see are returned, so a missing student number means "not found
+// or not visible", never "exists".
+export const MoodleUserByIdNumberSchema = z.array(MoodleObject.extend({
+  id: z.number(),
+  fullname: z.string().optional().default(""),
+  idnumber: z.string().nullable().optional(),
+}));

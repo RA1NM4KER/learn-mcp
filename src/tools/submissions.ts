@@ -8,6 +8,7 @@ import {
   loadAssignmentParticipants,
   loadAssignmentSubmissionStatus,
   loadAssignments,
+  loadUsersByIdNumber,
 } from "../moodle-loaders.js";
 import { RefSchema } from "./tool-ref-helpers.js";
 import { mapWithConcurrency, SUBMISSION_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
@@ -145,24 +146,20 @@ function resolveGroup(groups: Group[], group: number | string): { ok: true; grou
 }
 
 /**
- * Walks mod_assign_list_participants a page at a time. The result is bounded
- * by SUBMISSION_POLICY.maxParticipantPages, and `truncated` reports when the
- * scan stopped early so an unmatched number is not reported as definitely absent.
+ * The assignment roster in one call. With a group, only that group's
+ * members are returned. `fullDetails` is needed for group listings, where
+ * student numbers are shown; number lookups only need IDs and names. Bounded
+ * by SUBMISSION_POLICY.maxRosterSize, and `truncated` says when entries were dropped.
  */
-async function scanParticipants(
+async function loadRoster(
   client: MoodleClient,
   assignmentId: number,
   groupId: number | undefined,
+  fullDetails: boolean,
 ): Promise<{ participants: MoodleAssignParticipant[]; truncated: boolean }> {
-  const participants: MoodleAssignParticipant[] = [];
-  let skip = 0;
-  for (let page = 0; page < SUBMISSION_POLICY.maxParticipantPages; page++) {
-    const batch = await loadAssignmentParticipants(client, assignmentId, groupId ?? 0, skip, SUBMISSION_POLICY.participantPageSize);
-    participants.push(...batch);
-    if (batch.length < SUBMISSION_POLICY.participantPageSize) return { participants, truncated: false };
-    skip += batch.length;
-  }
-  return { participants, truncated: true };
+  const all = await loadAssignmentParticipants(client, assignmentId, groupId ?? 0, !fullDetails);
+  const truncated = all.length > SUBMISSION_POLICY.maxRosterSize;
+  return { participants: all.slice(0, SUBMISSION_POLICY.maxRosterSize), truncated };
 }
 
 /** One submission owner: an individual student, or a group whose submission is shared by its members. */
@@ -304,40 +301,59 @@ async function renderSubmissionReport(
   ctx: AssignmentContext,
   options: { numbers: string[]; group: Group | undefined },
 ): Promise<string> {
-  const scan = await timed("loading the participant list", () => scanParticipants(ctx.client, ctx.assignmentId, options.group?.id));
+  const lookingUpNumbers = options.numbers.length > 0;
+  const roster = await timed("loading the participant list", () =>
+    loadRoster(ctx.client, ctx.assignmentId, options.group?.id, !lookingUpNumbers));
 
   const title = truncateText(ctx.assignmentName, TEXT_OUTPUT_POLICY.maxLabelCharacters);
   const lines: string[] = [`## Submissions: ${title} (assignment ${ctx.assignmentId})\n`];
   if (options.group) lines.push(`Group filter: **${truncateText(options.group.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**`);
-  lines.push(`Participants scanned: ${scan.participants.length}${scan.truncated ? " (scan limit reached; results may be incomplete)" : ""}`);
+  lines.push(`Participants in this assignment: ${roster.participants.length}${roster.truncated ? " (roster limit reached; results may be incomplete)" : ""}`);
+  if (options.group && roster.participants.length === 0) {
+    lines.push("Moodle returned no participants for this group. Moodle also returns nothing for groups hidden from this account, so this does not prove the group has no students.");
+  }
   if (!ctx.contentEnabled) lines.push(`_${NO_FILE_DOWNLOADS_NOTE}_`);
   lines.push("");
 
+  const rosterIds = new Set(roster.participants.map((p) => p.id));
+  const rosterById = new Map(roster.participants.map((p) => [p.id, p]));
+
   // Decide who is shown first, so only those students' submission status is fetched.
   type NumberResult =
-    | { number: string; kind: "inaccessible" | "unmatched" | "not-found" }
+    | { number: string; kind: "unmatched" }
     | { number: string; kind: "ambiguous"; matches: MoodleAssignParticipant[] }
     | { number: string; kind: "matched"; participant: MoodleAssignParticipant };
   let numberResults: NumberResult[] = [];
   let listed: MoodleAssignParticipant[] = [];
   let omittedParticipants = 0;
 
-  if (options.numbers.length > 0) {
-    // Moodle returns the student number on participants only when this account
-    // is allowed to see it. If none came back, every lookup is inaccessible,
-    // not unmatched.
-    const numberVisible = scan.participants.some((p) => (p.idnumber?.trim() ?? "") !== "");
+  if (lookingUpNumbers) {
+    // One exact idnumber lookup for every requested number. Users Moodle does
+    // not return are not visible to this account, or do not exist. Either way,
+    // "unmatched" is the honest result.
+    const users = await timed("looking up student numbers", () => loadUsersByIdNumber(ctx.client, options.numbers));
     numberResults = options.numbers.map((number): NumberResult => {
-      if (!numberVisible) return { number, kind: "inaccessible" };
-      const matches = scan.participants.filter((p) => p.idnumber?.trim() === number);
-      if (matches.length === 0) return { number, kind: scan.truncated ? "not-found" : "unmatched" };
-      if (matches.length > 1) return { number, kind: "ambiguous", matches };
-      return { number, kind: "matched", participant: matches[0]! };
+      const candidates = users.filter((u) => u.idnumber?.trim() === number && rosterIds.has(u.id));
+      if (candidates.length === 0) return { number, kind: "unmatched" };
+      if (candidates.length > 1) {
+        return {
+          number,
+          kind: "ambiguous",
+          matches: candidates.map((u) => ({ id: u.id, fullname: u.fullname, username: "", idnumber: number, groups: [] })),
+        };
+      }
+      const user = candidates[0]!;
+      const rosterEntry = rosterById.get(user.id);
+      return {
+        number,
+        kind: "matched",
+        participant: { id: user.id, fullname: rosterEntry?.fullname || user.fullname, username: "", idnumber: number, groups: rosterEntry?.groups ?? [] },
+      };
     });
     listed = numberResults.flatMap((r) => (r.kind === "matched" ? [r.participant] : []));
   } else {
-    // Group listing with no number lookup. Shows the group's participants only, bounded by maxRenderedRows.
-    const ordered = [...scan.participants].sort((a, b) => (a.fullname || a.username).localeCompare(b.fullname || b.username));
+    // Group listing with no number lookup, bounded by maxRenderedRows.
+    const ordered = [...roster.participants].sort((a, b) => (a.fullname || a.username).localeCompare(b.fullname || b.username));
     listed = ordered.slice(0, SUBMISSION_POLICY.maxRenderedRows);
     omittedParticipants = ordered.length - listed.length;
   }
@@ -350,19 +366,13 @@ async function renderSubmissionReport(
   const rendered = new Set<string>();
   const unitOf = (p: MoodleAssignParticipant) => unitFor(ctx, p, fetched.get(p.id) ?? { individual: [], team: undefined });
 
-  if (options.numbers.length > 0) {
+  if (lookingUpNumbers) {
     lines.push("### Student number lookups\n");
     for (const result of numberResults) {
       const { number } = result;
       switch (result.kind) {
-        case "inaccessible":
-          lines.push(`- \`${number}\`: **inaccessible**. Moodle did not return student numbers for this assignment's participants.`);
-          break;
-        case "not-found":
-          lines.push(`- \`${number}\`: **not found** within the scanned participants (scan limit reached).`);
-          break;
         case "unmatched":
-          lines.push(`- \`${number}\`: **unmatched**. No participant of this assignment has this student number.`);
+          lines.push(`- \`${number}\`: **unmatched**. No participant of this assignment has this student number, or your account cannot see one.`);
           break;
         case "ambiguous": {
           const ids = result.matches.map((p) => p.id).join(", ");

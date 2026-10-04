@@ -4,7 +4,7 @@ import {
   MoodleDiscussionsResponseSchema, MoodleForumSchema, MoodleGradeReportSchema, MoodleNotificationsResponseSchema,
   MoodleQuizAttemptsResponseSchema, MoodleQuizzesResponseSchema, MoodleSubmissionStatusSchema,
   MoodleAllowedGroupsSchema, MoodleAssignParticipantsSchema, MoodleAssignSubmissionsResponseSchema,
-  MoodleAssignSubmissionStatusSchema,
+  MoodleAssignSubmissionStatusSchema, MoodleUserByIdNumberSchema,
 } from "./moodle-api.js";
 
 export const loadEnrolledCourses = (client: MoodleClient) =>
@@ -46,8 +46,20 @@ export const loadNotifications = (client: MoodleClient, limit: number) =>
 export const loadAssignmentGroups = (client: MoodleClient, cmid: number) =>
   client.call("core_group_get_activity_allowed_groups", { cmid }, MoodleAllowedGroupsSchema);
 
-export const loadAssignmentParticipants = (client: MoodleClient, assignId: number, groupId: number, skip: number, limit: number) =>
-  client.call("mod_assign_list_participants", { assignid: assignId, groupid: groupId, filter: "", skip, limit }, MoodleAssignParticipantsSchema);
+/**
+ * The whole roster in one call (limit 0 = no limit). Moodle rebuilds the
+ * full roster on every call and only slices it afterwards, so paging repeats
+ * that work once per page. onlyids skips the per-user detail lookup.
+ */
+export const loadAssignmentParticipants = (client: MoodleClient, assignId: number, groupId: number, onlyIds: boolean) =>
+  client.call("mod_assign_list_participants", { assignid: assignId, groupid: groupId, filter: "", skip: 0, limit: 0, onlyids: onlyIds }, MoodleAssignParticipantsSchema);
+
+/** Exact idnumber lookup. Values are sent as text, so leading zeros are kept. */
+export const loadUsersByIdNumber = (client: MoodleClient, idNumbers: string[]) => {
+  const params: Record<string, string> = { field: "idnumber" };
+  idNumbers.forEach((value, index) => { params[`values[${index}]`] = value; });
+  return client.call("core_user_get_users_by_field", params, MoodleUserByIdNumberSchema);
+};
 
 export const loadAssignmentSubmissions = (client: MoodleClient, assignId: number) =>
   client.call("mod_assign_get_submissions", { "assignmentids[0]": assignId }, MoodleAssignSubmissionsResponseSchema);

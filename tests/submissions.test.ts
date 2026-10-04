@@ -44,6 +44,7 @@ function wire(overrides: Overrides = {}, assignment: Record<string, unknown> = {
     mod_assign_list_participants: () => participants(),
     mod_assign_get_submissions: { assignments: [{ assignmentid: 6326, submissions: submissions() }], warnings: [] },
     mod_assign_get_submission_status: (body: URLSearchParams) => statusFor(Number(body.get("userid"))),
+    core_user_get_users_by_field: (body: URLSearchParams) => usersByIdNumber(body),
     ...overrides,
   };
   mockFetch.mockImplementation(async (url: string, init: { body?: URLSearchParams }) => {
@@ -56,6 +57,14 @@ function wire(overrides: Overrides = {}, assignment: Record<string, unknown> = {
     const data = typeof entry === "function" ? (entry as Handler)(init.body!) : entry;
     return json(data);
   });
+}
+
+/** core_user_get_users_by_field(idnumber): only users with a visible idnumber come back. */
+function usersByIdNumber(body: URLSearchParams, roster: ReturnType<typeof participants> = participants()) {
+  const values = [...body.keys()].filter((k) => k.startsWith("values[")).map((k) => body.get(k));
+  return roster
+    .filter((p) => p.idnumber !== null && values.includes(p.idnumber))
+    .map((p) => ({ id: p.id, fullname: p.fullname, idnumber: p.idnumber }));
 }
 
 /** The per-student status call: latest attempt plus earlier attempts, for one student. */
@@ -158,39 +167,51 @@ describe("moodle_list_assignment_submissions: exact student-number matching", ()
     expect(text).toContain("- Not submitted");
   });
 
-  it("reports inaccessible, not unmatched, when Moodle returns no student numbers", async () => {
+  it("reports unmatched, with a visibility caveat, when Moodle returns no visible student numbers", async () => {
     wire({
       mod_assign_list_participants: () => participants().map((p) => ({ ...p, idnumber: null })),
+      core_user_get_users_by_field: [],
     });
     const c = await client();
     const text = textOf(await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["00123"] }));
-    expect(text).toContain("`00123`: **inaccessible**");
-    expect(text).not.toContain("unmatched");
+    expect(text).toContain("`00123`: **unmatched**");
+    expect(text).toContain("or your account cannot see one");
   });
 
-  it("does not claim a number is absent when the participant scan hit its page cap", async () => {
-    const fullPage = Array.from({ length: 100 }, (_, i) => ({ id: 5000 + i, fullname: `Student ${i}`, idnumber: `N${i}`, groups: [] }));
-    wire({ mod_assign_list_participants: () => fullPage });
+  it("reads the roster in one call with no limit, instead of paging", async () => {
+    // Regression: each paged call rebuilt the whole roster on Moodle's side.
+    wire();
     const c = await client();
-    const text = textOf(await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["NOPE"] }));
+    await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["00123"] });
 
-    expect(text).toContain("**not found** within the scanned participants (scan limit reached)");
-    expect(text).toContain("scan limit reached; results may be incomplete");
-    expect(text).not.toContain("**unmatched**");
-  });
-
-  it("pages participants in bounded batches with explicit offsets", async () => {
-    const fullPage = Array.from({ length: 100 }, (_, i) => ({ id: 5000 + i, fullname: `S${i}`, idnumber: `N${i}`, groups: [] }));
-    wire({ mod_assign_list_participants: () => fullPage });
-    const c = await client();
-    await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["N5"] });
-
-    const skips = mockFetch.mock.calls
+    const rosterCalls = mockFetch.mock.calls
       .map(([, init]) => (init as { body: URLSearchParams }).body)
-      .filter((body) => body.get("wsfunction") === "mod_assign_list_participants")
-      .map((body) => body.get("skip"));
-    expect(skips.length).toBe(20);
-    expect(skips.slice(0, 3)).toEqual(["0", "100", "200"]);
+      .filter((body) => body.get("wsfunction") === "mod_assign_list_participants");
+    expect(rosterCalls).toHaveLength(1);
+    expect(rosterCalls[0]!.get("limit")).toBe("0");
+    expect(rosterCalls[0]!.get("onlyids")).toBe("1");
+  });
+
+  it("looks up all requested student numbers in one exact idnumber call", async () => {
+    wire();
+    const c = await client();
+    await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["00123", "123"] });
+
+    const lookups = mockFetch.mock.calls
+      .map(([, init]) => (init as { body: URLSearchParams }).body)
+      .filter((body) => body.get("wsfunction") === "core_user_get_users_by_field");
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0]!.get("field")).toBe("idnumber");
+    expect(lookups[0]!.get("values[0]")).toBe("00123");
+    expect(lookups[0]!.get("values[1]")).toBe("123");
+  });
+
+  it("says an empty group does not prove the group has no students", async () => {
+    wire({ mod_assign_list_participants: () => [] });
+    const c = await client();
+    const text = textOf(await run(c, "moodle_list_assignment_submissions", { group: WEDNESDAY.name }));
+    expect(text).toContain("Participants in this assignment: 0");
+    expect(text).toContain("does not prove the group has no students");
   });
 
   it("does not call the whole-assignment submissions endpoint on the list path", async () => {
@@ -292,6 +313,7 @@ describe("moodle_list_assignment_submissions: attempts, drafts, shared groups", 
     ];
     wire({
       mod_assign_list_participants: () => teamParticipants,
+      core_user_get_users_by_field: (body: URLSearchParams) => usersByIdNumber(body, teamParticipants),
       mod_assign_get_submission_status: { lastattempt: { teamsubmission: { id: 9, userid: 0, groupid: 11, attemptnumber: 0, status: "submitted", latest: 1, timemodified: 1700000000, plugins: [fileAttachment()] } }, previousattempts: [] },
     }, { teamsubmission: 1 });
     const c = await client();
@@ -307,6 +329,7 @@ describe("moodle_list_assignment_submissions: attempts, drafts, shared groups", 
   it("says when a student has no group submission on a team assignment", async () => {
     wire({
       mod_assign_list_participants: () => [{ id: 3001, fullname: "Loner", idnumber: "L1", groups: [] }],
+      core_user_get_users_by_field: (body: URLSearchParams) => usersByIdNumber(body, [{ id: 3001, fullname: "Loner", idnumber: "L1", groups: [] }]),
       mod_assign_get_submission_status: { previousattempts: [] },
     }, { teamsubmission: 1 });
     const c = await client();

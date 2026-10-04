@@ -164,9 +164,9 @@ moodle_download_file(fileId="f_...")
 ```
 
 Each student number gets an explicit result: `matched`, `not submitted`
-(matched, no attempt), `unmatched`, `ambiguous` (nothing is selected),
-`inaccessible` (Moodle returned no student numbers), or `not found` (the scan
-hit its page limit). Every attempt is listed, newest first, and no attempt is
+(matched, no attempt), `unmatched` (no participant of this assignment has the
+number, or your account cannot see one), or `ambiguous` (several participants
+share the number; nothing is selected). Every attempt is listed, newest first, and no attempt is
 chosen automatically. A shared group submission is listed once, with a pointer
 for other members, so its files are not downloaded twice. Drafts are labelled
 as not submitted for grading.
@@ -176,9 +176,13 @@ Moodle web services used (all read-only):
 - `mod_assign_get_assignments`: assignment ID to course module ID, and the
   team-submission flag.
 - `core_group_get_activity_allowed_groups`: groups the account may filter by.
-- `mod_assign_list_participants`: paged roster used for student-number matching
-  and group filtering. Student numbers come from the `idnumber` field, which
-  Moodle returns only when the account may see it.
+- `mod_assign_list_participants`: the roster, fetched in one call with no
+  limit. Moodle rebuilds the whole roster on every call, so paging repeats that
+  work. Used for group filtering and to scope student-number matches.
+- `core_user_get_users_by_field` (field `idnumber`): one exact lookup for all
+  requested student numbers, sent as text so leading zeros are kept. Moodle
+  returns only users whose student number this account may see. Matches are
+  then limited to this assignment's roster.
 - `mod_assign_get_submission_status`: one student's submission, earlier
   attempts, and attachments. Used for every student the list shows, and to
   re-check each submission `fileId` before download. Calls are per student, so
@@ -194,10 +198,12 @@ account lacks grading access, the tool says so explicitly.
 
 Limitations:
 
-- Student numbers depend on the institution exposing `idnumber` to graders.
-  If it doesn't, lookups report `inaccessible` rather than guessing.
-- A scan reads at most 2,000 participants per call. Beyond that, a missing
-  number is reported as not found within the scan, not as absent.
+- Student-number lookups depend on Moodle showing `idnumber` to the account.
+  If it doesn't, numbers report `unmatched`. That can't be told apart from a
+  student who isn't in the assignment.
+- An empty group can mean the group is hidden from the account, not that it
+  has no students. The tool says so when a group returns no participants.
+- The roster is capped at 5,000 entries per call. If it is hit, results say so.
 - Submission `fileId`s expire after 24 hours, like course file IDs. Run the
   list again to get fresh ones.
 - Online-text submissions are not rendered; only file attachments are listed.
