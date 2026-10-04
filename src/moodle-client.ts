@@ -1,7 +1,7 @@
 import type { Config } from "./config.js";
 import { DEFAULT_MAX_FILE_MB, DEFAULT_REQUEST_TIMEOUT_MS } from "./config.js";
 import { FileIdStore, type FileRef } from "./file-id-store.js";
-import { isMoodleFileContent, MoodleCourseContentsSchema, MoodleErrorResponseSchema, MoodleLoginResponseSchema, MoodleSiteInfoSchema } from "./moodle-api.js";
+import { isMoodleFileContent, MoodleAssignSubmissionsResponseSchema, MoodleCourseContentsSchema, MoodleErrorResponseSchema, MoodleLoginResponseSchema, MoodleSiteInfoSchema } from "./moodle-api.js";
 import type { z } from "zod";
 
 export interface DownloadedFile {
@@ -199,6 +199,22 @@ export class MoodleClient {
     if (!ref) return null;
     try { this.assertSafeFileUrl(ref.fileurl); } catch { return null; }
     try {
+      if (ref.assignmentId !== undefined) {
+        // Submission attachments are authorised by the assignment's current
+        // submissions. A failed call (no grading access, submission removed)
+        // denies the file, the same as a missing course file.
+        const response = await this.call(
+          "mod_assign_get_submissions",
+          { "assignmentids[0]": ref.assignmentId },
+          MoodleAssignSubmissionsResponseSchema,
+        );
+        const found = response.assignments.some((assignment) => assignment.submissions.some((submission) =>
+          submission.plugins.some((plugin) => plugin.fileareas.some((area) =>
+            area.files.some((file) => file.fileurl === ref.fileurl),
+          )),
+        ));
+        return found ? ref : null;
+      }
       const sections = await this.call("core_course_get_contents", { courseid: ref.courseId }, MoodleCourseContentsSchema);
       return sections.some((section) => section.modules.some((mod) =>
         (mod.contents ?? []).some((file) => isMoodleFileContent(file) && file.fileurl === ref.fileurl),

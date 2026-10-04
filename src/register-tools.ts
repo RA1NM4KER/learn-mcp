@@ -6,6 +6,7 @@ import { registerCourseTools } from "./tools/courses.js";
 import { registerFileTools } from "./tools/files.js";
 import { registerDownloadTool } from "./tools/download.js";
 import { registerAssignmentTools } from "./tools/assignments.js";
+import { registerSubmissionTools } from "./tools/submissions.js";
 import { registerGradeTools } from "./tools/grades.js";
 import { registerCalendarTools } from "./tools/calendar.js";
 import { registerQuizTools } from "./tools/quizzes.js";
@@ -25,6 +26,7 @@ export function registerAllTools(
   registerFileTools(server, courseRefResolver, contentEnabled);
   registerDownloadTool(server, client, contentEnabled, multiSite);
   registerAssignmentTools(server, courseRefResolver);
+  registerSubmissionTools(server, courseRefResolver, contentEnabled);
   registerGradeTools(server, courseRefResolver);
   registerCalendarTools(server, client, courseRefResolver, multiSite);
   registerQuizTools(server, courseRefResolver);

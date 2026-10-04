@@ -92,6 +92,8 @@ export const MoodleAssignmentSchema = MoodleObject.extend({
   duedate: z.number().optional().default(0),
   cutoffdate: z.number().optional().default(0),
   grade: z.number().optional().default(0),
+  // 1 when submissions are made by a group rather than by individual students.
+  teamsubmission: z.number().optional().default(0),
 });
 export type MoodleAssignment = z.infer<typeof MoodleAssignmentSchema>;
 export const MoodleAssignmentsResponseSchema = MoodleObject.extend({
@@ -176,3 +178,54 @@ export function eventCourseId(event: MoodleCalendarEvent): number {
 export const MoodleNotificationSchema = MoodleObject.extend({ subject: z.string(), text: z.string(), timecreated: z.number(), read: z.boolean().optional().default(false) });
 export const MoodleNotificationsResponseSchema = MoodleObject.extend({ notifications: z.array(MoodleNotificationSchema), unreadcount: z.number().optional().default(0) });
 export type MoodleNotificationsResponse = z.infer<typeof MoodleNotificationsResponseSchema>;
+
+// TA / grader access. Shapes follow the mod_assign and core_group web services;
+// fields this server does not consume are passed through.
+export const MoodleAllowedGroupsSchema = MoodleObject.extend({
+  groups: z.array(MoodleObject.extend({ id: z.number(), name: z.string() })).optional().default([]),
+});
+export type MoodleAllowedGroups = z.infer<typeof MoodleAllowedGroupsSchema>;
+
+export const MoodleAssignParticipantSchema = MoodleObject.extend({
+  id: z.number(),
+  fullname: z.string().optional().default(""),
+  username: z.string().optional().default(""),
+  // The institutional student number. Null/absent when the account cannot see it.
+  idnumber: z.string().nullable().optional(),
+  groups: z.array(MoodleObject.extend({ id: z.number(), name: z.string().optional().default("") })).optional().default([]),
+});
+export type MoodleAssignParticipant = z.infer<typeof MoodleAssignParticipantSchema>;
+export const MoodleAssignParticipantsSchema = z.array(MoodleAssignParticipantSchema);
+
+const MoodleSubmissionFileSchema = MoodleObject.extend({
+  filename: z.string(),
+  filesize: z.number().optional().default(0),
+  mimetype: z.string().optional(),
+  fileurl: z.string(),
+});
+
+const MoodleSubmissionPluginSchema = MoodleObject.extend({
+  type: z.string(),
+  fileareas: z.array(MoodleObject.extend({
+    area: z.string(),
+    files: z.array(MoodleSubmissionFileSchema).optional().default([]),
+  })).optional().default([]),
+});
+
+export const MoodleAssignSubmissionSchema = MoodleObject.extend({
+  id: z.number(),
+  userid: z.number(),
+  groupid: z.number().optional().default(0),
+  attemptnumber: z.number().optional().default(0),
+  status: z.string().optional().default(""),
+  latest: z.union([z.number(), z.boolean()]).optional().default(false),
+  timemodified: z.number().optional().default(0),
+  plugins: z.array(MoodleSubmissionPluginSchema).optional().default([]),
+});
+export type MoodleAssignSubmission = z.infer<typeof MoodleAssignSubmissionSchema>;
+export const MoodleAssignSubmissionsResponseSchema = MoodleObject.extend({
+  assignments: z.array(MoodleObject.extend({
+    assignmentid: z.number(),
+    submissions: z.array(MoodleAssignSubmissionSchema).optional().default([]),
+  })).optional().default([]),
+});

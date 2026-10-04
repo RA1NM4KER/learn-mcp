@@ -23,6 +23,9 @@ export const FileRefSchema = z.object({
   mime: z.string(),
   filename: z.string(),
   filesize: FiniteNumber,
+  // Set only for file attachments from a submission (moodle_list_assignment_submissions).
+  // Those are authorised against the assignment's submissions, not course contents.
+  assignmentId: SafePositiveInteger.optional(),
 }).strict();
 export type FileRef = z.infer<typeof FileRefSchema>;
 

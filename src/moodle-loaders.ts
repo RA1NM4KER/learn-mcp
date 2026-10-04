@@ -3,6 +3,7 @@ import {
   MoodleAssignmentsResponseSchema, MoodleCalendarResponseSchema, MoodleCourseContentsSchema, MoodleCourseSchema,
   MoodleDiscussionsResponseSchema, MoodleForumSchema, MoodleGradeReportSchema, MoodleNotificationsResponseSchema,
   MoodleQuizAttemptsResponseSchema, MoodleQuizzesResponseSchema, MoodleSubmissionStatusSchema,
+  MoodleAllowedGroupsSchema, MoodleAssignParticipantsSchema, MoodleAssignSubmissionsResponseSchema,
 } from "./moodle-api.js";
 
 export const loadEnrolledCourses = (client: MoodleClient) =>
@@ -40,3 +41,12 @@ export const loadCalendarEvents = (client: MoodleClient, params: Record<string, 
 
 export const loadNotifications = (client: MoodleClient, limit: number) =>
   client.call("message_popup_get_popup_notifications", { useridto: client.userId, newestfirst: true, limit, offset: 0 }, MoodleNotificationsResponseSchema);
+
+export const loadAssignmentGroups = (client: MoodleClient, cmid: number) =>
+  client.call("core_group_get_activity_allowed_groups", { cmid }, MoodleAllowedGroupsSchema);
+
+export const loadAssignmentParticipants = (client: MoodleClient, assignId: number, groupId: number, skip: number, limit: number) =>
+  client.call("mod_assign_list_participants", { assignid: assignId, groupid: groupId, filter: "", skip, limit }, MoodleAssignParticipantsSchema);
+
+export const loadAssignmentSubmissions = (client: MoodleClient, assignId: number) =>
+  client.call("mod_assign_get_submissions", { "assignmentids[0]": assignId }, MoodleAssignSubmissionsResponseSchema);

@@ -141,6 +141,66 @@ that URI as an MCP resource or `moodle_download_file`; both re-check current
 Moodle access before downloading. File IDs expire after 24 hours and are
 bound to the authenticated user and token.
 
+### Teaching assistant access to submissions
+
+`moodle_list_assignment_groups` and `moodle_list_assignment_submissions` let a
+teaching assistant or grader look up an assignment's submissions, read-only.
+Typical workflow:
+
+1. `moodle_list_assignments` with the course ID, to get the assignment ID.
+2. `moodle_list_assignment_groups` with the course and assignment IDs, to see
+   the groups the assignment allows (grouping restrictions are applied).
+3. `moodle_list_assignment_submissions` with either exact student numbers
+   (up to 25 per call, kept as text so leading zeros survive), a group name or
+   group ID, or both.
+4. `moodle_download_file` with a submission `fileId` from step 3.
+
+Example calls:
+
+```text
+moodle_list_assignment_submissions(courseId, assignmentId, studentNumbers=["00123", "00456"])
+moodle_list_assignment_submissions(courseId, assignmentId, group="Prac 3 Wednesday 14:00 Bench 4-31")
+moodle_download_file(fileId="f_...")
+```
+
+Each student number gets an explicit result: `matched`, `not submitted`
+(matched, no attempt), `unmatched`, `ambiguous` (nothing is selected),
+`inaccessible` (Moodle returned no student numbers), or `not found` (the scan
+hit its page limit). Every attempt is listed, newest first, and no attempt is
+chosen automatically. A shared group submission is listed once, with a pointer
+for other members, so its files are not downloaded twice. Drafts are labelled
+as not submitted for grading.
+
+Moodle web services used (all read-only):
+
+- `mod_assign_get_assignments`: assignment ID to course module ID, and the
+  team-submission flag.
+- `core_group_get_activity_allowed_groups`: groups the account may filter by.
+- `mod_assign_list_participants`: paged roster used for student-number matching
+  and group filtering. Student numbers come from the `idnumber` field, which
+  Moodle returns only when the account may see it.
+- `mod_assign_get_submissions`: submissions, attempts, and attachments. Also
+  used to re-check every submission `fileId` before download.
+
+The account needs grading capability on the assignment (for example, the
+Teacher or Grader role on the course). No admin credentials are used, and no
+browser automation is involved. If a web service is not enabled, or the
+account lacks grading access, the tool says so explicitly.
+
+Limitations:
+
+- Student numbers depend on the institution exposing `idnumber` to graders.
+  If it doesn't, lookups report `inaccessible` rather than guessing.
+- A scan reads at most 2,000 participants per call. Beyond that, a missing
+  number is reported as not found within the scan, not as absent.
+- Submission `fileId`s expire after 24 hours, like course file IDs. Run the
+  list again to get fresh ones.
+- Online-text submissions are not rendered; only file attachments are listed.
+- Live verification against STEMLearn has not been performed for this tool
+  set. The Moodle function parameters above follow Moodle's documented
+  web-service shapes and are covered by mocked tests only.
+- After deploying, reconnect the MCP client so it picks up the new tool list.
+
 Prompts: `summarize-course`, `whats-due`, `build-study-notes`, `exam-prep`,
 and `search-notes`. Prompts that read files use the URI returned by
 `moodle_list_resources` rather than constructing one.

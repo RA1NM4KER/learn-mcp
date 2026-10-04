@@ -22,6 +22,15 @@ export const COMPOSED_TASK_POLICY = {
   submissionStatusConcurrency: 4,
   maxHistoricalRendered: 20,
 } as const;
+/** Bounds for TA/grader submission lookups (moodle_list_assignment_submissions). */
+export const SUBMISSION_POLICY = {
+  maxStudentNumbers: 25,
+  participantPageSize: 100,
+  maxParticipantPages: 20,
+  maxRenderedRows: 100,
+  maxAttemptsPerSubmission: 5,
+  maxFilesPerAttempt: 20,
+} as const;
 export const MULTI_SITE_POLICY = { fanOutConcurrency: 4 } as const;
 
 /** Per-field and embedded-content limits for MCP-safe text rendering. */

@@ -1,0 +1,385 @@
+import { z } from "zod";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { MoodleClient, MoodleClientError, MoodleTimeoutError } from "../moodle-client.js";
+import type { CourseRefResolver } from "../course-ref-resolver.js";
+import type { MoodleAssignParticipant, MoodleAssignSubmission } from "../moodle-api.js";
+import {
+  loadAssignmentGroups,
+  loadAssignmentParticipants,
+  loadAssignmentSubmissions,
+  loadAssignments,
+} from "../moodle-loaders.js";
+import { RefSchema } from "./tool-ref-helpers.js";
+import { SUBMISSION_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
+import { truncateText } from "../text.js";
+import { formatMoodleDateTime } from "../format-date.js";
+
+// Read-only TA/grader access to assignment submissions. Nothing here calls a
+// Moodle write API. Every fileId is issued from a server response and bound
+// to this account, and MoodleClient.authorizeFile re-checks it before a
+// download. See the tool descriptions below for the caller-facing contract.
+
+type Group = { id: number; name: string };
+type SubmissionFile = MoodleAssignSubmission["plugins"][number]["fileareas"][number]["files"][number];
+
+interface AssignmentContext {
+  client: MoodleClient;
+  courseId: number;
+  assignmentId: number;
+  assignmentName: string;
+  teamSubmission: boolean;
+  groups: Group[];
+  contentEnabled: boolean;
+}
+
+interface ToolResult {
+  [key: string]: unknown;
+  content: { type: "text"; text: string }[];
+  isError?: boolean;
+}
+
+const PERMISSION_MESSAGE =
+  "Moodle refused this request. Your account may not have grading access to this assignment.";
+const NOT_ENABLED_MESSAGE =
+  "The assignment submissions API is not enabled on this Moodle. Ask your admin to enable mod_assign web services.";
+const NO_FILE_DOWNLOADS_NOTE =
+  "File downloads are not enabled on this deployment, so no file IDs are issued.";
+
+const STATUS_LABELS: Record<string, string> = {
+  submitted: "Submitted",
+  draft: "Draft (not submitted for grading)",
+  new: "No submission yet",
+  reopened: "Reopened",
+};
+
+function errorResult(message: string): ToolResult {
+  return { isError: true, content: [{ type: "text", text: message }] };
+}
+
+async function loadContext(
+  resolver: CourseRefResolver,
+  courseRef: number | string,
+  assignmentRef: number | string,
+  contentEnabled: boolean,
+): Promise<{ ok: true; ctx: AssignmentContext } | { ok: false; message: string }> {
+  const course = await resolver.resolve("course", courseRef);
+  if (!course.ok) return { ok: false, message: course.message };
+  const assignment = await resolver.resolve("assignment", assignmentRef);
+  if (!assignment.ok) return { ok: false, message: assignment.message };
+  if (assignment.siteId !== course.siteId) {
+    return { ok: false, message: "The course and assignment must come from the same SUNLearn environment." };
+  }
+
+  const client = course.client;
+  if (!client.supports("mod_assign_get_submissions")) return { ok: false, message: NOT_ENABLED_MESSAGE };
+
+  const assignments = await loadAssignments(client, { "courseids[0]": course.id });
+  const found = (assignments.courses[0]?.assignments ?? []).find((a) => a.id === assignment.id);
+  if (!found) {
+    return { ok: false, message: "That assignment was not found in this course, or your account cannot access it." };
+  }
+
+  // core_group_get_activity_allowed_groups applies the assignment's grouping
+  // restriction, so the groups returned here are the only ones this tool will
+  // accept as a filter.
+  const allowed = await loadAssignmentGroups(client, found.cmid);
+  return {
+    ok: true,
+    ctx: {
+      client,
+      courseId: course.id,
+      assignmentId: found.id,
+      assignmentName: found.name,
+      teamSubmission: found.teamsubmission === 1,
+      groups: allowed.groups,
+      contentEnabled,
+    },
+  };
+}
+
+function resolveGroup(groups: Group[], group: number | string): { ok: true; group: Group } | { ok: false; message: string } {
+  if (typeof group === "number") {
+    const found = groups.find((g) => g.id === group);
+    return found
+      ? { ok: true, group: found }
+      : { ok: false, message: `Group ${group} is not available for this assignment. Run moodle_list_assignment_groups to see the allowed groups.` };
+  }
+  const needle = group.trim().toLowerCase();
+  const matches = groups.filter((g) => g.name.trim().toLowerCase() === needle);
+  if (matches.length === 0) {
+    return { ok: false, message: "No group with that name is available for this assignment. Run moodle_list_assignment_groups to see the names." };
+  }
+  if (matches.length > 1) return { ok: false, message: "More than one group has that name. Pass its group ID instead." };
+  return { ok: true, group: matches[0]! };
+}
+
+/**
+ * Walks mod_assign_list_participants a page at a time. The result is bounded
+ * by SUBMISSION_POLICY.maxParticipantPages, and `truncated` reports when the
+ * scan stopped early so an unmatched number is not reported as definitely absent.
+ */
+async function scanParticipants(
+  client: MoodleClient,
+  assignmentId: number,
+  groupId: number | undefined,
+): Promise<{ participants: MoodleAssignParticipant[]; truncated: boolean }> {
+  const participants: MoodleAssignParticipant[] = [];
+  let skip = 0;
+  for (let page = 0; page < SUBMISSION_POLICY.maxParticipantPages; page++) {
+    const batch = await loadAssignmentParticipants(client, assignmentId, groupId ?? 0, skip, SUBMISSION_POLICY.participantPageSize);
+    participants.push(...batch);
+    if (batch.length < SUBMISSION_POLICY.participantPageSize) return { participants, truncated: false };
+    skip += batch.length;
+  }
+  return { participants, truncated: true };
+}
+
+/** One submission owner: an individual student, or a group whose submission is shared by its members. */
+interface Unit {
+  key: string;
+  label: string;
+  shared: boolean;
+  attempts: MoodleAssignSubmission[];
+}
+
+function unitFor(ctx: AssignmentContext, participant: MoodleAssignParticipant, submissions: MoodleAssignSubmission[]): Unit {
+  if (ctx.teamSubmission) {
+    const memberGroupIds = new Set(participant.groups.map((g) => g.id));
+    const groupSubmission = submissions.find((s) => s.groupid !== 0 && memberGroupIds.has(s.groupid));
+    if (!groupSubmission) return { key: `none:${participant.id}`, label: "Student", shared: false, attempts: [] };
+    const groupId = groupSubmission.groupid;
+    const name = participant.groups.find((g) => g.id === groupId)?.name
+      ?? ctx.groups.find((g) => g.id === groupId)?.name
+      ?? `group ${groupId}`;
+    return {
+      key: `group:${groupId}`,
+      label: truncateText(name, TEXT_OUTPUT_POLICY.maxLabelCharacters),
+      shared: true,
+      attempts: submissions.filter((s) => s.groupid === groupId),
+    };
+  }
+  return {
+    key: `user:${participant.id}`,
+    label: "Student",
+    shared: false,
+    attempts: submissions.filter((s) => s.userid === participant.id),
+  };
+}
+
+function formatWhen(ts: number): string {
+  return ts ? formatMoodleDateTime(ts) : "unknown time";
+}
+
+async function sealFile(client: MoodleClient, ctx: AssignmentContext, file: SubmissionFile): Promise<string> {
+  return client.fileIdStore.seal({
+    userId: client.userId,
+    courseId: ctx.courseId,
+    fileurl: file.fileurl,
+    mime: file.mimetype || "application/octet-stream",
+    filename: file.filename,
+    filesize: file.filesize,
+    assignmentId: ctx.assignmentId,
+  });
+}
+
+/** Every attempt is shown, newest first, up to a cap. Nothing is selected silently. */
+async function renderAttempts(ctx: AssignmentContext, attempts: MoodleAssignSubmission[]): Promise<string[]> {
+  if (attempts.length === 0) return ["- Not submitted"];
+
+  const lines: string[] = [];
+  const newestFirst = [...attempts].sort((a, b) => b.attemptnumber - a.attemptnumber);
+  for (const attempt of newestFirst.slice(0, SUBMISSION_POLICY.maxAttemptsPerSubmission)) {
+    const status = STATUS_LABELS[attempt.status] ?? truncateText(attempt.status || "Unknown", TEXT_OUTPUT_POLICY.maxLabelCharacters);
+    const latest = attempt.latest ? ", latest" : "";
+    const modified = attempt.timemodified ? `, modified ${formatWhen(attempt.timemodified)}` : "";
+    lines.push(`- Attempt ${attempt.attemptnumber}${latest}: ${status}${modified}`);
+
+    const files = attempt.plugins
+      .filter((p) => p.type === "file")
+      .flatMap((p) => p.fileareas.flatMap((area) => area.files));
+    if (files.length === 0) {
+      lines.push("  - No file attachments on this attempt");
+      continue;
+    }
+    for (const file of files.slice(0, SUBMISSION_POLICY.maxFilesPerAttempt)) {
+      const name = truncateText(file.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters);
+      const mime = file.mimetype || "application/octet-stream";
+      const idPart = ctx.contentEnabled
+        ? ` · fileId \`${await sealFile(ctx.client, ctx, file)}\``
+        : "";
+      lines.push(`  - ${name} (${mime}, ${file.filesize} bytes)${idPart}`);
+    }
+    if (files.length > SUBMISSION_POLICY.maxFilesPerAttempt) {
+      lines.push(`  - ${files.length - SUBMISSION_POLICY.maxFilesPerAttempt} more file(s) omitted`);
+    }
+  }
+  if (attempts.length > SUBMISSION_POLICY.maxAttemptsPerSubmission) {
+    lines.push(`- ${attempts.length - SUBMISSION_POLICY.maxAttemptsPerSubmission} older attempt(s) omitted`);
+  }
+  return lines;
+}
+
+/** Renders a unit's attempts once. A later member of the same shared group gets a pointer instead of duplicate file IDs. */
+async function renderUnit(ctx: AssignmentContext, unit: Unit, rendered: Set<string>): Promise<string[]> {
+  if (rendered.has(unit.key)) {
+    return [`  - Shared group submission (${unit.label}), listed above`];
+  }
+  rendered.add(unit.key);
+  const heading = unit.shared ? `  - Shared group submission for ${unit.label}:` : "  Submission:";
+  const body = (await renderAttempts(ctx, unit.attempts)).map((line) => `    ${line}`);
+  return [heading, ...body];
+}
+
+function describeParticipant(p: MoodleAssignParticipant): string {
+  const name = truncateText(p.fullname || p.username || "Unnamed student", TEXT_OUTPUT_POLICY.maxLabelCharacters);
+  const number = p.idnumber?.trim();
+  const numberPart = number ? `student number \`${number}\`` : "student number not returned by Moodle";
+  return `${name}, ${numberPart}, Moodle user ID ${p.id}`;
+}
+
+function renderGroupList(ctx: AssignmentContext): string {
+  const lines = [`## Groups for ${truncateText(ctx.assignmentName, TEXT_OUTPUT_POLICY.maxLabelCharacters)}\n`];
+  if (ctx.groups.length === 0) {
+    lines.push("No groups are available to your account for this assignment.");
+  } else {
+    for (const group of ctx.groups) {
+      lines.push(`- **${truncateText(group.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**, group ID \`${group.id}\``);
+    }
+  }
+  return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
+}
+
+async function renderSubmissionReport(
+  ctx: AssignmentContext,
+  options: { numbers: string[]; group: Group | undefined },
+): Promise<string> {
+  const { client } = ctx;
+  const scan = await scanParticipants(client, ctx.assignmentId, options.group?.id);
+  const submissionsResponse = await loadAssignmentSubmissions(client, ctx.assignmentId);
+  const submissions = submissionsResponse.assignments.find((a) => a.assignmentid === ctx.assignmentId)?.submissions ?? [];
+
+  const title = truncateText(ctx.assignmentName, TEXT_OUTPUT_POLICY.maxLabelCharacters);
+  const lines: string[] = [`## Submissions: ${title} (assignment ${ctx.assignmentId})\n`];
+  if (options.group) lines.push(`Group filter: **${truncateText(options.group.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**`);
+  lines.push(`Participants scanned: ${scan.participants.length}${scan.truncated ? " (scan limit reached; results may be incomplete)" : ""}`);
+  if (!ctx.contentEnabled) lines.push(`_${NO_FILE_DOWNLOADS_NOTE}_`);
+  lines.push("");
+
+  const rendered = new Set<string>();
+  const unitOf = (p: MoodleAssignParticipant) => unitFor(ctx, p, submissions);
+
+  if (options.numbers.length > 0) {
+    // Moodle returns the student number on participants only when this account
+    // is allowed to see it. If none came back, every lookup is inaccessible,
+    // not unmatched.
+    const numberVisible = scan.participants.some((p) => (p.idnumber?.trim() ?? "") !== "");
+    lines.push("### Student number lookups\n");
+    for (const number of options.numbers) {
+      if (!numberVisible) {
+        lines.push(`- \`${number}\`: **inaccessible**. Moodle did not return student numbers for this assignment's participants.`);
+        continue;
+      }
+      const matches = scan.participants.filter((p) => p.idnumber?.trim() === number);
+      if (matches.length === 0) {
+        lines.push(scan.truncated
+          ? `- \`${number}\`: **not found** within the scanned participants (scan limit reached).`
+          : `- \`${number}\`: **unmatched**. No participant of this assignment has this student number.`);
+        continue;
+      }
+      if (matches.length > 1) {
+        const ids = matches.map((p) => p.id).join(", ");
+        lines.push(`- \`${number}\`: **ambiguous**, ${matches.length} participants share this student number (Moodle user IDs ${ids}). Nothing was selected or downloaded.`);
+        continue;
+      }
+      const [participant] = matches as [MoodleAssignParticipant];
+      lines.push(`- \`${number}\`: **matched**, ${describeParticipant(participant)}`);
+      lines.push(...(await renderUnit(ctx, unitOf(participant), rendered)));
+    }
+    lines.push("");
+  } else {
+    // Group listing with no number lookup. Shows the group's participants only, bounded by maxRenderedRows.
+    const label = options.group ? truncateText(options.group.name, TEXT_OUTPUT_POLICY.maxLabelCharacters) : "all participants";
+    lines.push(`### Participants in ${label}\n`);
+    const ordered = [...scan.participants].sort((a, b) => (a.fullname || a.username).localeCompare(b.fullname || b.username));
+    const shown = ordered.slice(0, SUBMISSION_POLICY.maxRenderedRows);
+    for (const participant of shown) {
+      lines.push(`- ${describeParticipant(participant)}`);
+      lines.push(...(await renderUnit(ctx, unitOf(participant), rendered)));
+    }
+    if (ordered.length > shown.length) {
+      lines.push(`_${ordered.length - shown.length} more participant(s) omitted; narrow the group filter or request specific student numbers._`);
+    }
+  }
+
+  return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
+}
+
+/** Maps Moodle failures to explicit messages without forwarding upstream text. */
+async function runTool(fn: () => Promise<ToolResult>): Promise<ToolResult> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof MoodleTimeoutError) return errorResult(err.message);
+    if (err instanceof MoodleClientError && err.code === "api") return errorResult(PERMISSION_MESSAGE);
+    if (err instanceof MoodleClientError) return errorResult(err.message);
+    return errorResult("Could not read submissions from Moodle. Please try again.");
+  }
+}
+
+export function registerSubmissionTools(
+  server: McpServer,
+  courseRefResolver: CourseRefResolver,
+  contentEnabled = true,
+): void {
+  server.tool(
+    "moodle_list_assignment_groups",
+    "List the groups a teaching assistant can filter an assignment's submissions by. Returns group names and IDs. The list respects the assignment's grouping restrictions. Read-only.",
+    {
+      courseId: RefSchema.describe("Course ID from moodle_list_courses"),
+      assignmentId: RefSchema.describe("Assignment ID from moodle_list_assignments"),
+    },
+    async ({ courseId, assignmentId }) => runTool(async () => {
+      const loaded = await loadContext(courseRefResolver, courseId, assignmentId, contentEnabled);
+      if (!loaded.ok) return errorResult(loaded.message);
+      return { content: [{ type: "text", text: renderGroupList(loaded.ctx) }] };
+    }),
+  );
+
+  server.tool(
+    "moodle_list_assignment_submissions",
+    "Find an assignment's submissions for a teaching assistant. Look up students by exact student number (up to 25 per call) and/or filter by group name or group ID. Returns each student's submission status, every attempt (nothing is selected silently), attachment names, MIME types, sizes, and opaque fileIds for moodle_download_file. Shared group submissions are listed once. Read-only.",
+    {
+      courseId: RefSchema.describe("Course ID from moodle_list_courses"),
+      assignmentId: RefSchema.describe("Assignment ID from moodle_list_assignments"),
+      studentNumbers: z.array(z.string().trim().min(1).max(32))
+        .max(SUBMISSION_POLICY.maxStudentNumbers)
+        .optional()
+        .describe("Exact student numbers, kept as text so leading zeros are preserved"),
+      group: z.union([z.number().int().positive(), z.string().trim().min(1).max(200)])
+        .optional()
+        .describe("Group ID or exact group name from moodle_list_assignment_groups"),
+    },
+    async ({ courseId, assignmentId, studentNumbers, group }) => runTool(async () => {
+      const numbers = [...new Set((studentNumbers ?? []).map((n) => n.trim()).filter((n) => n.length > 0))];
+      if (numbers.length === 0 && group === undefined) {
+        return errorResult("Provide at least one student number, a group, or both.");
+      }
+      if (numbers.length > SUBMISSION_POLICY.maxStudentNumbers) {
+        return errorResult(`Look up at most ${SUBMISSION_POLICY.maxStudentNumbers} student numbers per call.`);
+      }
+
+      const loaded = await loadContext(courseRefResolver, courseId, assignmentId, contentEnabled);
+      if (!loaded.ok) return errorResult(loaded.message);
+
+      let selectedGroup: Group | undefined;
+      if (group !== undefined) {
+        const resolved = resolveGroup(loaded.ctx.groups, group);
+        if (!resolved.ok) return errorResult(resolved.message);
+        selectedGroup = resolved.group;
+      }
+
+      const text = await renderSubmissionReport(loaded.ctx, { numbers, group: selectedGroup });
+      return { content: [{ type: "text", text }] };
+    }),
+  );
+}

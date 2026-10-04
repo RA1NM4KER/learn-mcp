@@ -41,9 +41,9 @@ export function registerDownloadTool(server: McpServer, client: MoodleClient, co
   if (!contentEnabled) return;
   server.tool(
     "moodle_download_file",
-    "Download a Moodle course file by its opaque fileId (from moodle_list_resources). Returns text for text/JSON/XML files; returns the raw bytes as an embedded resource for binary formats like PDFs, DOCX, images. The server fetches the file, so you never need to fetch Moodle URLs directly.",
+    "Download a Moodle file by its opaque fileId: a course file (from moodle_list_resources) or a submission attachment (from moodle_list_assignment_submissions, teaching assistants only). Returns text for text/JSON/XML files; returns the raw bytes as an embedded resource for binary formats like PDFs, DOCX, images. The server fetches the file, so you never need to fetch Moodle URLs directly.",
     {
-      fileId: z.string().describe("Opaque fileId returned by moodle_list_resources"),
+      fileId: z.string().describe("Opaque fileId returned by moodle_list_resources or moodle_list_assignment_submissions"),
     },
     async ({ fileId }) => {
       let authorized;
