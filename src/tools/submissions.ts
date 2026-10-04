@@ -28,6 +28,8 @@ interface AssignmentContext {
   courseId: number;
   assignmentId: number;
   assignmentName: string;
+  /** Course-module ID, used to build the grader page link. */
+  courseModuleId: number;
   teamSubmission: boolean;
   groups: Group[];
   contentEnabled: boolean;
@@ -122,6 +124,7 @@ async function loadContext(
       courseId: course.id,
       assignmentId: found.id,
       assignmentName: found.name,
+      courseModuleId: found.cmid,
       teamSubmission: found.teamsubmission === 1,
       groups: allowed.groups,
       contentEnabled,
@@ -285,6 +288,19 @@ function describeParticipant(p: MoodleAssignParticipant): string {
   return `${name}, ${numberPart}, Moodle user ID ${p.id}`;
 }
 
+/**
+ * The Moodle grader page for one student. It is a plain page URL with the
+ * course-module ID and the student's user ID, with no token and no file URL.
+ * The TA opens it in their own browser session and enters marks there.
+ */
+function gradingUrl(ctx: AssignmentContext, userId: number): string {
+  const url = new URL("/mod/assign/view.php", ctx.client.baseUrl);
+  url.searchParams.set("id", String(ctx.courseModuleId));
+  url.searchParams.set("action", "grader");
+  url.searchParams.set("userid", String(userId));
+  return url.toString();
+}
+
 function renderGroupList(ctx: AssignmentContext): string {
   const lines = [`## Groups for ${truncateText(ctx.assignmentName, TEXT_OUTPUT_POLICY.maxLabelCharacters)}\n`];
   if (ctx.groups.length === 0) {
@@ -381,6 +397,7 @@ async function renderSubmissionReport(
         }
         case "matched":
           lines.push(`- \`${number}\`: **matched**, ${describeParticipant(result.participant)}`);
+          lines.push(`  - Grading page: ${gradingUrl(ctx, result.participant.id)}`);
           lines.push(...(await renderUnit(ctx, unitOf(result.participant), result.participant.id, rendered)));
           break;
       }
@@ -391,6 +408,7 @@ async function renderSubmissionReport(
     lines.push(`### Participants in ${label}\n`);
     for (const participant of listed) {
       lines.push(`- ${describeParticipant(participant)}`);
+      lines.push(`  - Grading page: ${gradingUrl(ctx, participant.id)}`);
       lines.push(...(await renderUnit(ctx, unitOf(participant), participant.id, rendered)));
     }
     if (omittedParticipants > 0) {
@@ -435,7 +453,7 @@ export function registerSubmissionTools(
 
   server.tool(
     "moodle_list_assignment_submissions",
-    "Find an assignment's submissions for a teaching assistant. Look up students by exact student number (up to 25 per call) and/or filter by group name or group ID. Returns each student's submission status, every attempt (nothing is selected silently), attachment names, MIME types, sizes, and opaque fileIds for moodle_download_file. Shared group submissions are listed once. Read-only.",
+    "Find an assignment's submissions for a teaching assistant. Look up students by exact student number (up to 25 per call) and/or filter by group name or group ID. Returns each student's submission status, every attempt (nothing is selected silently), attachment names, MIME types, sizes, opaque fileIds for moodle_download_file, and a Moodle grader page link for each student (the TA opens it to enter marks). Shared group submissions are listed once. Read-only: no grades are written.",
     {
       courseId: RefSchema.describe("Course ID from moodle_list_courses"),
       assignmentId: RefSchema.describe("Assignment ID from moodle_list_assignments"),

@@ -386,6 +386,17 @@ describe("moodle_list_assignment_submissions: fileIds and permissions", () => {
     expect(textOf(result)).toContain("MOODLE_MCP_REQUEST_TIMEOUT_MS");
   });
 
+  it("gives each listed student a grader page link with the course module and user ID and no token", async () => {
+    wire();
+    const c = await client();
+    const text = textOf(await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["00123"] }));
+    const link = text.match(/Grading page: (\S+)/)?.[1];
+
+    expect(link).toBe(`${BASE}/mod/assign/view.php?id=92947&action=grader&userid=1001`);
+    expect(link).not.toContain("token");
+    expect(link).not.toContain("pluginfile");
+  });
+
   it("returns not-found for an assignment outside the course", async () => {
     wire({ mod_assign_get_assignments: { courses: [{ id: 2722, assignments: [] }] } });
     const c = await client();

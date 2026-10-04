@@ -154,6 +154,9 @@ Typical workflow:
    (up to 25 per call, kept as text so leading zeros survive), a group name or
    group ID, or both.
 4. `moodle_download_file` with a submission `fileId` from step 3.
+5. Open a student's `Grading page` link from step 3 in your own browser to
+   enter marks there. The server never writes grades. The link is a plain
+   Moodle page with no token.
 
 Example calls:
 
