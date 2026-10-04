@@ -331,6 +331,19 @@ describe("moodle_list_assignment_submissions: fileIds and permissions", () => {
     expect(textOf(result)).not.toContain("secret-detail");
   });
 
+  it("names the Moodle step that timed out instead of a generic timeout", async () => {
+    // Regression: a stalled submissions request must say which step stalled,
+    // so a slow lookup can be told apart from a slow participant list.
+    const abort = () => { throw Object.assign(new Error("aborted"), { name: "AbortError" }); };
+    wire({ mod_assign_get_submissions: abort });
+    const c = await client();
+    const result = await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["00123"] });
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain("while loading submissions");
+    expect(textOf(result)).toContain("MOODLE_MCP_REQUEST_TIMEOUT_MS");
+  });
+
   it("returns not-found for an assignment outside the course", async () => {
     wire({ mod_assign_get_assignments: { courses: [{ id: 2722, assignments: [] }] } });
     const c = await client();

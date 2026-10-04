@@ -56,6 +56,37 @@ function errorResult(message: string): ToolResult {
   return { isError: true, content: [{ type: "text", text: message }] };
 }
 
+/** A Moodle request timed out during one named step of the lookup. */
+class SubmissionStepTimeoutError extends Error {
+  constructor(readonly step: string, readonly elapsedMs: number) {
+    super(
+      `Moodle did not answer in time while ${step} (waited ${elapsedMs} ms). ` +
+        "Try again. If it keeps happening, raise MOODLE_MCP_REQUEST_TIMEOUT_MS (up to 120000).",
+    );
+    this.name = "SubmissionStepTimeoutError";
+  }
+}
+
+/**
+ * Runs one Moodle step and logs its duration to stderr (never stdout, which
+ * carries the MCP stream). Logs the step name and milliseconds only, no
+ * student data, tokens, or URLs. A timeout is re-thrown with the step named,
+ * so the caller can say which request stalled.
+ */
+async function timed<T>(step: string, fn: () => Promise<T>): Promise<T> {
+  const started = Date.now();
+  try {
+    const result = await fn();
+    console.error(`[submissions] ${step}: ${Date.now() - started} ms`);
+    return result;
+  } catch (err) {
+    const elapsed = Date.now() - started;
+    console.error(`[submissions] ${step}: failed after ${elapsed} ms (${err instanceof Error ? err.name : "unknown error"})`);
+    if (err instanceof MoodleTimeoutError) throw new SubmissionStepTimeoutError(step, elapsed);
+    throw err;
+  }
+}
+
 async function loadContext(
   resolver: CourseRefResolver,
   courseRef: number | string,
@@ -73,7 +104,7 @@ async function loadContext(
   const client = course.client;
   if (!client.supports("mod_assign_get_submissions")) return { ok: false, message: NOT_ENABLED_MESSAGE };
 
-  const assignments = await loadAssignments(client, { "courseids[0]": course.id });
+  const assignments = await timed("loading the assignment list", () => loadAssignments(client, { "courseids[0]": course.id }));
   const found = (assignments.courses[0]?.assignments ?? []).find((a) => a.id === assignment.id);
   if (!found) {
     return { ok: false, message: "That assignment was not found in this course, or your account cannot access it." };
@@ -82,7 +113,7 @@ async function loadContext(
   // core_group_get_activity_allowed_groups applies the assignment's grouping
   // restriction, so the groups returned here are the only ones this tool will
   // accept as a filter.
-  const allowed = await loadAssignmentGroups(client, found.cmid);
+  const allowed = await timed("loading the allowed groups", () => loadAssignmentGroups(client, found.cmid));
   return {
     ok: true,
     ctx: {
@@ -254,8 +285,8 @@ async function renderSubmissionReport(
   options: { numbers: string[]; group: Group | undefined },
 ): Promise<string> {
   const { client } = ctx;
-  const scan = await scanParticipants(client, ctx.assignmentId, options.group?.id);
-  const submissionsResponse = await loadAssignmentSubmissions(client, ctx.assignmentId);
+  const scan = await timed("loading the participant list", () => scanParticipants(client, ctx.assignmentId, options.group?.id));
+  const submissionsResponse = await timed("loading submissions", () => loadAssignmentSubmissions(client, ctx.assignmentId));
   const submissions = submissionsResponse.assignments.find((a) => a.assignmentid === ctx.assignmentId)?.submissions ?? [];
 
   const title = truncateText(ctx.assignmentName, TEXT_OUTPUT_POLICY.maxLabelCharacters);
@@ -319,6 +350,7 @@ async function runTool(fn: () => Promise<ToolResult>): Promise<ToolResult> {
   try {
     return await fn();
   } catch (err) {
+    if (err instanceof SubmissionStepTimeoutError) return errorResult(err.message);
     if (err instanceof MoodleTimeoutError) return errorResult(err.message);
     if (err instanceof MoodleClientError && err.code === "api") return errorResult(PERMISSION_MESSAGE);
     if (err instanceof MoodleClientError) return errorResult(err.message);
