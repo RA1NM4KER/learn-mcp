@@ -156,7 +156,7 @@ describe("configFromWorkerEnv", () => {
     });
     expect(config.baseUrl).toBe("https://moodle.uni.edu");
     expect(config.auth).toEqual({ kind: "token", token: "worker-token" });
-    expect(config.maxFileBytes).toBe(25 * 1024 * 1024);
+    expect(config.maxFileBytes).toBe(100 * 1024 * 1024);
     expect(config.requestTimeoutMs).toBe(20_000);
   });
 

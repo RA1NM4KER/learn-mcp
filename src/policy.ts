@@ -48,6 +48,18 @@ export const TEXT_OUTPUT_POLICY = {
   maxEmbeddedBinaryFileBytes: 5 * 1024 * 1024,
 } as const;
 
+/**
+ * Deadlines for file transfers. These cover the whole transfer, headers and
+ * body included, so they bound a stalled download without relying on the
+ * shorter per-request timeout.
+ */
+export const FILE_TRANSFER_POLICY = {
+  /** Embedding a file in an MCP response (small files only). */
+  embedTimeoutMs: 60_000,
+  /** Saving a file to disk on the local server (large files). */
+  saveTimeoutMs: 300_000,
+} as const;
+
 /** Map items with a fixed number of active promises, preserving input order. */
 export async function mapWithConcurrency<T, R>(
   items: readonly T[],

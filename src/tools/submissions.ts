@@ -171,6 +171,8 @@ interface Unit {
   label: string;
   shared: boolean;
   attempts: MoodleAssignSubmission[];
+  /** The bench group's Moodle group ID, for team submissions only. */
+  groupId?: number;
 }
 
 /** One student's submissions, from mod_assign_get_submission_status (cheap, per student). */
@@ -206,6 +208,7 @@ function unitFor(ctx: AssignmentContext, participant: MoodleAssignParticipant, o
       label: truncateText(name, TEXT_OUTPUT_POLICY.maxLabelCharacters),
       shared: true,
       attempts: [team],
+      groupId,
     };
   }
   return {
@@ -288,17 +291,34 @@ function describeParticipant(p: MoodleAssignParticipant): string {
   return `${name}, ${numberPart}, Moodle user ID ${p.id}`;
 }
 
-/**
- * The Moodle grader page for one student. It is a plain page URL with the
- * course-module ID and the student's user ID, with no token and no file URL.
- * The TA opens it in their own browser session and enters marks there.
- */
-function gradingUrl(ctx: AssignmentContext, userId: number): string {
+function moodlePage(ctx: AssignmentContext, query: Record<string, string>): string {
   const url = new URL("/mod/assign/view.php", ctx.client.baseUrl);
   url.searchParams.set("id", String(ctx.courseModuleId));
-  url.searchParams.set("action", "grader");
-  url.searchParams.set("userid", String(userId));
+  for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
   return url.toString();
+}
+
+/**
+ * The Moodle page for one bench group on a team assignment. Uses the
+ * course-module ID and the group ID. Grader links by student user ID redirect
+ * on team assignments; group links are the ones that work.
+ */
+export function groupUrl(ctx: AssignmentContext, groupId: number): string {
+  return moodlePage(ctx, { group: String(groupId) });
+}
+
+/**
+ * The grader page for one student on an individual assignment. Built from the
+ * course-module ID and the Moodle user ID. It holds no token and no file URL.
+ * On a team assignment the group page is used instead.
+ */
+function gradingUrl(ctx: AssignmentContext, userId: number): string {
+  return moodlePage(ctx, { action: "grader", userid: String(userId) });
+}
+
+function linkFor(ctx: AssignmentContext, participant: MoodleAssignParticipant, unit: Unit): string {
+  if (ctx.teamSubmission && unit.groupId !== undefined) return groupUrl(ctx, unit.groupId);
+  return gradingUrl(ctx, participant.id);
 }
 
 function renderGroupList(ctx: AssignmentContext): string {
@@ -308,9 +328,44 @@ function renderGroupList(ctx: AssignmentContext): string {
   } else {
     for (const group of ctx.groups) {
       lines.push(`- **${truncateText(group.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**, group ID \`${group.id}\``);
+      lines.push(`  Group page: ${groupUrl(ctx, group.id)}`);
     }
   }
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
+}
+
+/**
+ * One bench group on a team assignment: its group page link, its members with
+ * student numbers, and its one shared submission with the files listed once.
+ */
+async function renderTeamGroupBlock(
+  ctx: AssignmentContext,
+  group: Group,
+  members: MoodleAssignParticipant[],
+): Promise<string[]> {
+  const name = truncateText(group.name, TEXT_OUTPUT_POLICY.maxLabelCharacters);
+  const lines: string[] = [`### Bench group ${name} (group ID ${group.id})`, `Group page: ${groupUrl(ctx, group.id)}`];
+  if (members.length === 0) {
+    lines.push("No members were returned for this group.");
+    return lines;
+  }
+
+  const ordered = [...members].sort((a, b) => (a.fullname || a.username).localeCompare(b.fullname || b.username));
+  const shown = ordered.slice(0, SUBMISSION_POLICY.maxRenderedRows);
+  lines.push(`Members (${members.length}):`);
+  for (const member of shown) lines.push(`- ${describeParticipant(member)}`);
+  if (members.length > shown.length) lines.push(`_${members.length - shown.length} more member(s) omitted._`);
+
+  const representative = ordered[0]!;
+  const own = await timed("loading submission status", () => fetchStudentSubmissions(ctx, representative));
+  const unit = unitFor(ctx, representative, own);
+  if (unit.attempts.length === 0) {
+    lines.push("Submission: not submitted");
+    return lines;
+  }
+  lines.push("Submission:");
+  for (const line of await renderAttempts(ctx, unit.attempts, representative.id)) lines.push(`  ${line}`);
+  return lines;
 }
 
 async function renderSubmissionReport(
@@ -330,6 +385,12 @@ async function renderSubmissionReport(
   }
   if (!ctx.contentEnabled) lines.push(`_${NO_FILE_DOWNLOADS_NOTE}_`);
   lines.push("");
+
+  if (ctx.teamSubmission && options.group && !lookingUpNumbers) {
+    // One block per bench group. Its members share one submission, so one status call covers the group.
+    lines.push(...(await renderTeamGroupBlock(ctx, options.group, roster.participants)));
+    return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
+  }
 
   const rosterIds = new Set(roster.participants.map((p) => p.id));
   const rosterById = new Map(roster.participants.map((p) => [p.id, p]));
@@ -397,7 +458,7 @@ async function renderSubmissionReport(
         }
         case "matched":
           lines.push(`- \`${number}\`: **matched**, ${describeParticipant(result.participant)}`);
-          lines.push(`  - Grading page: ${gradingUrl(ctx, result.participant.id)}`);
+          lines.push(`  - Grading page: ${linkFor(ctx, result.participant, unitOf(result.participant))}`);
           lines.push(...(await renderUnit(ctx, unitOf(result.participant), result.participant.id, rendered)));
           break;
       }
@@ -408,7 +469,7 @@ async function renderSubmissionReport(
     lines.push(`### Participants in ${label}\n`);
     for (const participant of listed) {
       lines.push(`- ${describeParticipant(participant)}`);
-      lines.push(`  - Grading page: ${gradingUrl(ctx, participant.id)}`);
+      lines.push(`  - Grading page: ${linkFor(ctx, participant, unitOf(participant))}`);
       lines.push(...(await renderUnit(ctx, unitOf(participant), participant.id, rendered)));
     }
     if (omittedParticipants > 0) {

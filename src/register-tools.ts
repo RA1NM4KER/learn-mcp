@@ -7,6 +7,7 @@ import { registerFileTools } from "./tools/files.js";
 import { registerDownloadTool } from "./tools/download.js";
 import { registerAssignmentTools } from "./tools/assignments.js";
 import { registerSubmissionTools } from "./tools/submissions.js";
+import { registerSaveTool } from "./tools/save.js";
 import { registerGradeTools } from "./tools/grades.js";
 import { registerCalendarTools } from "./tools/calendar.js";
 import { registerQuizTools } from "./tools/quizzes.js";
@@ -21,10 +22,13 @@ export function registerAllTools(
   courseRefResolver: CourseRefResolver,
   multiSite?: MultiSiteContext,
   contentEnabled = true,
+  downloadDir?: string,
 ): void {
   registerCourseTools(server, client, courseRefResolver, multiSite);
   registerFileTools(server, courseRefResolver, contentEnabled);
-  registerDownloadTool(server, client, contentEnabled, multiSite);
+  // Saving to disk exists only on the local server, which passes downloadDir.
+  registerDownloadTool(server, client, contentEnabled, multiSite, downloadDir !== undefined);
+  if (contentEnabled && downloadDir !== undefined) registerSaveTool(server, client, downloadDir, multiSite);
   registerAssignmentTools(server, courseRefResolver);
   registerSubmissionTools(server, courseRefResolver, contentEnabled);
   registerGradeTools(server, courseRefResolver);

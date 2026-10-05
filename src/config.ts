@@ -5,7 +5,7 @@ import { z } from "zod";
 
 interface ConfigBase {
   baseUrl: string;
-  /** Per-file download cap in bytes. Default 25 MB. */
+  /** Per-file download cap in bytes. Default 100 MB. */
   maxFileBytes: number;
   /** Per-request Moodle network timeout in milliseconds. Default 20 seconds. */
   requestTimeoutMs: number;
@@ -55,7 +55,7 @@ export function loadTokenFile(): TokenFile | null {
   }
 }
 
-export const DEFAULT_MAX_FILE_MB = 25;
+export const DEFAULT_MAX_FILE_MB = 100;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
 
 export function parseMaxFileMb(raw: string | undefined): number {

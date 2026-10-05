@@ -27,16 +27,18 @@ export const LEARN_MCP_SERVER_INFO = { name: "learn-mcp", version: "0.1.0" } as 
  * SUNLearn site (see multi-site-context.ts). `contentEnabled` (default true;
  * the remote Worker passes REMOTE_COURSE_CONTENT_ENABLED) independently gates
  * full file-content retrieval (moodle_download_file, the moodle://files/*
- * resource) without touching any course-metadata tool.
+ * resource) without touching any course-metadata tool. `downloadDir`, set only
+ * by the local stdio server, enables moodle_save_file for large files.
  */
 export function createSunLearnServer(
   client: MoodleClient,
   courseRefResolver: CourseRefResolver,
   multiSite?: MultiSiteContext,
   contentEnabled = true,
+  downloadDir?: string,
 ): McpServer {
   const server = new McpServer(LEARN_MCP_SERVER_INFO);
-  registerAllTools(server, client, courseRefResolver, multiSite, contentEnabled);
+  registerAllTools(server, client, courseRefResolver, multiSite, contentEnabled, downloadDir);
   registerResources(server, client, contentEnabled);
   registerPrompts(server);
   return server;

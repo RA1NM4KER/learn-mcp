@@ -397,6 +397,49 @@ describe("moodle_list_assignment_submissions: fileIds and permissions", () => {
     expect(link).not.toContain("pluginfile");
   });
 
+  it("renders a team bench group once: group page, members, one status call, files once", async () => {
+    const members = [
+      { id: 2001, fullname: "Member One", idnumber: "A100", groups: [WEDNESDAY] },
+      { id: 2002, fullname: "Member Two", idnumber: "A101", groups: [WEDNESDAY] },
+    ];
+    wire({
+      mod_assign_list_participants: () => members,
+      mod_assign_get_submission_status: { lastattempt: { teamsubmission: { id: 9, userid: 0, groupid: 11, attemptnumber: 0, status: "submitted", latest: 1, timemodified: 1700000000, plugins: [fileAttachment()] } }, previousattempts: [] },
+    }, { teamsubmission: 1 });
+    const c = await client();
+    const text = textOf(await run(c, "moodle_list_assignment_submissions", { group: WEDNESDAY.name }));
+
+    expect(text).toContain("### Bench group Prac 3 Wednesday 14:00 Bench 4-31 (group ID 11)");
+    expect(text).toContain(`Group page: ${BASE}/mod/assign/view.php?id=92947&group=11`);
+    expect(text).toContain("Members (2):");
+    expect(text).toContain("student number `A100`");
+    expect(text).toContain("student number `A101`");
+    expect(fileIdsIn(text)).toHaveLength(1);
+    const statusCalls = mockFetch.mock.calls.filter(([, init]) => (init as { body: URLSearchParams }).body.get("wsfunction") === "mod_assign_get_submission_status");
+    expect(statusCalls).toHaveLength(1);
+  });
+
+  it("links a matched student on a team assignment to the group page, not the student grader page", async () => {
+    // Regression: grader links by student user ID redirect on team assignments.
+    wire({
+      mod_assign_list_participants: () => [{ id: 2001, fullname: "Member One", idnumber: "A100", groups: [WEDNESDAY] }],
+      core_user_get_users_by_field: (body: URLSearchParams) => usersByIdNumber(body, [{ id: 2001, fullname: "Member One", idnumber: "A100", groups: [WEDNESDAY] }]),
+      mod_assign_get_submission_status: { lastattempt: { teamsubmission: { id: 9, userid: 0, groupid: 11, attemptnumber: 0, status: "submitted", latest: 1, plugins: [] } }, previousattempts: [] },
+    }, { teamsubmission: 1 });
+    const c = await client();
+    const text = textOf(await run(c, "moodle_list_assignment_submissions", { studentNumbers: ["A100"] }));
+    expect(text).toContain(`Grading page: ${BASE}/mod/assign/view.php?id=92947&group=11`);
+    expect(text).not.toContain("action=grader");
+  });
+
+  it("lists each group's page link with its real group ID", async () => {
+    wire();
+    const c = await client();
+    const text = textOf(await run(c, "moodle_list_assignment_groups", {}));
+    expect(text).toContain(`Group page: ${BASE}/mod/assign/view.php?id=92947&group=11`);
+    expect(text).toContain(`Group page: ${BASE}/mod/assign/view.php?id=92947&group=12`);
+  });
+
   it("returns not-found for an assignment outside the course", async () => {
     wire({ mod_assign_get_assignments: { courses: [{ id: 2722, assignments: [] }] } });
     const c = await client();

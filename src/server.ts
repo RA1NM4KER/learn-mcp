@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { homedir } from "node:os";
+import path from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { getConfig, loadTokenFile } from "./config.js";
 import { MoodleClient } from "./moodle-client.js";
@@ -48,7 +50,9 @@ async function main() {
   const config = getConfig();
   const client = await MoodleClient.create(config);
 
-  const server = createSunLearnServer(client, createAnchorOnlyResolver(client));
+  // Local-only: where moodle_save_file writes large files. Override with MOODLE_MCP_DOWNLOAD_DIR.
+  const downloadDir = process.env.MOODLE_MCP_DOWNLOAD_DIR?.trim() || path.join(homedir(), "Downloads", "learn-mcp");
+  const server = createSunLearnServer(client, createAnchorOnlyResolver(client), undefined, true, downloadDir);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

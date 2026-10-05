@@ -1,16 +1,30 @@
 import type { Config } from "./config.js";
 import { DEFAULT_MAX_FILE_MB, DEFAULT_REQUEST_TIMEOUT_MS } from "./config.js";
+import { FILE_TRANSFER_POLICY } from "./policy.js";
 import { FileIdStore, type FileRef } from "./file-id-store.js";
 import { isMoodleFileContent, MoodleAssignSubmissionStatusSchema, MoodleAssignSubmissionsResponseSchema, MoodleCourseContentsSchema, MoodleErrorResponseSchema, MoodleLoginResponseSchema, MoodleSiteInfoSchema } from "./moodle-api.js";
 import type { z } from "zod";
 
 export interface DownloadedFile {
   mime: string;
+  /** The whole file, unless the caller streamed it through onChunk (then empty). */
   bytes: Uint8Array;
+  size: number;
+}
+
+export interface FileTransferOptions {
+  /** Deadline for the whole transfer. Defaults to FILE_TRANSFER_POLICY.embedTimeoutMs. */
+  timeoutMs?: number;
+  /** Byte cap for this transfer. Defaults to the client's maxFileBytes. */
+  maxBytes?: number;
+  /** Cancels the transfer when aborted. */
+  signal?: AbortSignal;
+  /** Receives bytes as they arrive, so large files are never held whole in memory. */
+  onChunk?: (chunk: Uint8Array) => Promise<void>;
 }
 
 export class MoodleClientError extends Error {
-  constructor(message: string, readonly code: "timeout" | "network" | "authentication" | "api") {
+  constructor(message: string, readonly code: "timeout" | "network" | "authentication" | "api" | "cancelled" | "too-large") {
     super(message);
     this.name = "MoodleClientError";
   }
@@ -18,6 +32,20 @@ export class MoodleClientError extends Error {
 
 export class MoodleTimeoutError extends MoodleClientError {
   constructor() { super("Moodle request timed out. Please try again.", "timeout"); this.name = "MoodleTimeoutError"; }
+}
+
+/** A file transfer ran past its deadline. The message says how long it waited. */
+export class FileTransferTimeoutError extends MoodleClientError {
+  constructor(seconds: number) {
+    const shown = Math.max(1, seconds);
+    super(`The file did not finish downloading within ${shown} second${shown === 1 ? "" : "s"}. Try again, or check the connection.`, "timeout");
+    this.name = "FileTransferTimeoutError";
+  }
+}
+
+/** The caller cancelled the download (for example the MCP client aborted the request). */
+export class FileTransferCancelledError extends MoodleClientError {
+  constructor() { super("The download was cancelled before it finished.", "cancelled"); this.name = "FileTransferCancelledError"; }
 }
 
 export class MoodleValidationError extends MoodleClientError {
@@ -185,12 +213,38 @@ export class MoodleClient {
    * The Moodle WS token is attached to the outbound request only; it never
    * reappears in anything returned to the MCP client.
    */
-  async downloadFile(fileurl: string): Promise<DownloadedFile> {
+  /**
+   * Stream a Moodle-managed file. One deadline covers the request, the
+   * headers, and the body, so a stalled transfer cannot hang. `maxBytes`
+   * aborts the stream as soon as it grows past the cap. With `onChunk`,
+   * bytes go to the caller as they arrive and nothing is buffered here.
+   * `signal` cancels the transfer. The Moodle token is attached to the
+   * outbound request only and is never returned or logged.
+   */
+  async downloadFile(fileurl: string, options: FileTransferOptions = {}): Promise<DownloadedFile> {
     this.assertSafeFileUrl(fileurl);
     const parsed = new URL(fileurl);
     parsed.searchParams.set("token", this.token);
-    const res = await this.fetch(parsed.toString());
-    return this.readDownloadedFile(res);
+
+    const timeoutMs = options.timeoutMs ?? FILE_TRANSFER_POLICY.embedTimeoutMs;
+    const maxBytes = options.maxBytes ?? this.maxFileBytes;
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), timeoutMs);
+    const onCancel = () => deadline.abort();
+    options.signal?.addEventListener("abort", onCancel, { once: true });
+    try {
+      const res = await fetch(parsed.toString(), { signal: deadline.signal });
+      return await this.readDownloadedFile(res, maxBytes, deadline.signal, options.onChunk);
+    } catch (error) {
+      if (options.signal?.aborted) throw new FileTransferCancelledError();
+      if (deadline.signal.aborted) throw new FileTransferTimeoutError(Math.round(timeoutMs / 1000));
+      if (error instanceof MoodleClientError) throw error;
+      if (error instanceof Error && error.name === "AbortError") throw new FileTransferTimeoutError(Math.round(timeoutMs / 1000));
+      throw new MoodleClientError("Unable to reach Moodle while downloading the file. Please try again.", "network");
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onCancel);
+    }
   }
 
   /** Validate a sealed file ref and re-check Moodle's current course access. */
@@ -238,10 +292,10 @@ export class MoodleClient {
     }
   }
 
-  async downloadAuthorizedFile(fileId: string): Promise<{ ref: FileRef; downloaded: DownloadedFile } | null> {
+  async downloadAuthorizedFile(fileId: string, options: FileTransferOptions = {}): Promise<{ ref: FileRef; downloaded: DownloadedFile } | null> {
     const ref = await this.authorizeFile(fileId);
     if (!ref) return null;
-    return { ref, downloaded: await this.downloadFile(ref.fileurl) };
+    return { ref, downloaded: await this.downloadFile(ref.fileurl, options) };
   }
 
   private assertSafeFileUrl(fileurl: string): void {
@@ -265,25 +319,58 @@ export class MoodleClient {
     }
   }
 
-  private async readDownloadedFile(res: Response): Promise<DownloadedFile> {
-    if (!res.ok) throw new Error(`Failed to fetch file: HTTP ${res.status}`);
-
-    const maxMb = Math.round(this.maxFileBytes / 1024 / 1024);
-    const lengthHeader = res.headers.get("content-length");
-    if (lengthHeader && Number(lengthHeader) > this.maxFileBytes) {
-      throw new Error(
-        `File too large (${Math.round(Number(lengthHeader) / 1024 / 1024)} MB); max is ${maxMb} MB. Admins can raise the cap with MOODLE_MCP_MAX_FILE_MB.`,
-      );
-    }
-
-    const buf = await res.arrayBuffer();
-    if (buf.byteLength > this.maxFileBytes) {
-      throw new Error(
-        `File too large (${Math.round(buf.byteLength / 1024 / 1024)} MB); max is ${maxMb} MB. Admins can raise the cap with MOODLE_MCP_MAX_FILE_MB.`,
-      );
-    }
-
+  private async readDownloadedFile(
+    res: Response,
+    maxBytes: number,
+    signal: AbortSignal,
+    onChunk?: (chunk: Uint8Array) => Promise<void>,
+  ): Promise<DownloadedFile> {
+    if (!res.ok) throw new MoodleClientError(`Moodle returned HTTP ${res.status} for this file.`, "api");
     const mime = res.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
-    return { mime, bytes: new Uint8Array(buf) };
+    const tooLarge = (size: number) => new MoodleClientError(
+      `File is ${(size / 1024 / 1024).toFixed(1)} MB or larger; the limit for this request is ${Math.round(maxBytes / 1024 / 1024)} MB.`,
+      "too-large",
+    );
+
+    const lengthHeader = res.headers.get("content-length");
+    if (lengthHeader && Number(lengthHeader) > maxBytes) throw tooLarge(Number(lengthHeader));
+
+    if (!res.body) {
+      // Test doubles and very old runtimes may return no stream. The size is checked after the fact.
+      const buf = new Uint8Array(await res.arrayBuffer());
+      if (buf.byteLength > maxBytes) throw tooLarge(buf.byteLength);
+      if (onChunk) await onChunk(buf);
+      return { mime, bytes: onChunk ? new Uint8Array(0) : buf, size: buf.byteLength };
+    }
+
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      for (;;) {
+        if (signal.aborted) break;
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel().catch(() => undefined);
+          throw tooLarge(total);
+        }
+        if (onChunk) await onChunk(value);
+        else chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    if (signal.aborted) throw new MoodleClientError("The file transfer was aborted.", "timeout");
+
+    if (onChunk) return { mime, bytes: new Uint8Array(0), size: total };
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { mime, bytes, size: total };
   }
 }

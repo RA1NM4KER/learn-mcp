@@ -153,10 +153,19 @@ Typical workflow:
 3. `moodle_list_assignment_submissions` with either exact student numbers
    (up to 25 per call, kept as text so leading zeros survive), a group name or
    group ID, or both.
-4. `moodle_download_file` with a submission `fileId` from step 3.
-5. Open a student's `Grading page` link from step 3 in your own browser to
-   enter marks there. The server never writes grades. The link is a plain
-   Moodle page with no token.
+4. Download the report with a submission `fileId` from step 3:
+   `moodle_download_file` for files up to 5 MB (returned in the response), or
+   `moodle_save_file` on the local server for larger files (saved to
+   `MOODLE_MCP_DOWNLOAD_DIR`, default `~/Downloads/learn-mcp`).
+5. Open the `Grading page` link from step 3 in your own browser to enter marks
+   there. On a team assignment this is the bench group page
+   (`view.php?id={courseModuleId}&group={groupId}`), because grader links by
+   student user ID redirect there. The server never writes grades, and the
+   links hold no token.
+
+On team assignments, a bench group is one block: its group page, its members
+with student numbers, and its one shared submission with the files listed
+once. Each `Group page` link comes from `moodle_list_assignment_groups`.
 
 Example calls:
 
@@ -229,7 +238,10 @@ and `search-notes`. Prompts that read files use the URI returned by
 
 Network requests time out after 20 seconds by default; set
 `MOODLE_MCP_REQUEST_TIMEOUT_MS` (1000-120000) to change it. File downloads
-default to 25 MB (`MOODLE_MCP_MAX_FILE_MB`). Listings are bounded (for
+default to 100 MB (`MOODLE_MCP_MAX_FILE_MB`). Files over 5 MB are not embedded in
+responses; the local server saves them with `moodle_save_file` into the folder
+set by `MOODLE_MCP_DOWNLOAD_DIR` (default `~/Downloads/learn-mcp`). The reply
+gives the name, size, and SHA-256, not the path. Listings are bounded (for
 example, 25 files by default and 100 maximum) to avoid oversized MCP
 responses. Rendered Moodle text is also bounded per field; oversized text and
 text-file reads include a truncation notice. Binary resources over 5 MB are
