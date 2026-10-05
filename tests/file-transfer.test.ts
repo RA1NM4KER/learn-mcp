@@ -117,7 +117,7 @@ describe("moodle_download_file size handling", () => {
 
   function captureDownload(c: MoodleClient) {
     let handler: ((args: { fileId: string }, extra?: { signal?: AbortSignal }) => Promise<{ isError?: boolean; content: { text: string }[] }>) | undefined;
-    registerDownloadTool({ tool: (_n: string, _d: string, _s: unknown, h: never) => { handler = h; } } as never, c, true, undefined, true);
+    registerDownloadTool({ tool: (_n: string, _d: string, _s: unknown, _a: unknown, h: never) => { handler = h; } } as never, c, true, undefined, true);
     return handler!;
   }
 
@@ -144,7 +144,7 @@ describe("moodle_save_file", () => {
 
   function captureSave(c: MoodleClient) {
     let handler: ((args: { fileId: string }, extra?: { signal?: AbortSignal }) => Promise<{ isError?: boolean; content: { text: string }[] }>) | undefined;
-    registerSaveTool({ tool: (_n: string, _d: string, _s: unknown, h: never) => { handler = h; } } as never, c, dir);
+    registerSaveTool({ tool: (_n: string, _d: string, _s: unknown, _a: unknown, h: never) => { handler = h; } } as never, c, dir);
     return handler!;
   }
 

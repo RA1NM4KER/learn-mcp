@@ -9,6 +9,7 @@ import { loadActionCalendarEvents, loadAssignments, loadCalendarEvents, loadEnro
 import { eventCourseId, type MoodleCalendarEvent } from "../moodle-api.js";
 import { formatMoodleDateTime } from "../format-date.js";
 import { mapAccountWideSites, type MultiSiteContext } from "../multi-site-context.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 type CalendarSource = "calendar" | "assignment" | "quiz-open" | "quiz-close";
 type CalendarItem = { title: string; courseId: number; timestart: number; description?: string; eventtype?: string; sources: CalendarSource[] };
@@ -167,7 +168,7 @@ export async function getCalendarEventsAccountWide(
 }
 
 export function registerCalendarTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver, multiSite?: MultiSiteContext): void {
-  server.tool(
+  readOnlyTool(server,
     "moodle_get_calendar_events",
     "Get the student's upcoming deadlines and calendar events: assignments due, quizzes opening/closing, lecture/practical attendance registers, and other course calendar entries, across their courses, optionally filtered to one course. Good for 'what's coming up' / 'what's due this week' / 'what's on the calendar'. Defaults to the next 30 days. Filtering to a course on a non-default SUNLearn environment shows that environment's calendar only, not merged with your default one.",
     {

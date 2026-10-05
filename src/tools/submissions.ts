@@ -14,6 +14,7 @@ import { RefSchema } from "./tool-ref-helpers.js";
 import { mapWithConcurrency, SUBMISSION_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { truncateText } from "../text.js";
 import { formatMoodleDateTime } from "../format-date.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 // Read-only TA/grader access to assignment submissions. Nothing here calls a
 // Moodle write API. Every fileId is issued from a server response and bound
@@ -498,7 +499,7 @@ export function registerSubmissionTools(
   courseRefResolver: CourseRefResolver,
   contentEnabled = true,
 ): void {
-  server.tool(
+  readOnlyTool(server,
     "moodle_list_assignment_groups",
     "List the groups a teaching assistant can filter an assignment's submissions by. Returns group names and IDs. The list respects the assignment's grouping restrictions. Read-only.",
     {
@@ -512,7 +513,7 @@ export function registerSubmissionTools(
     }),
   );
 
-  server.tool(
+  readOnlyTool(server,
     "moodle_list_assignment_submissions",
     "Find an assignment's submissions for a teaching assistant. Look up students by exact student number (up to 25 per call) and/or filter by group name or group ID. Returns each student's submission status, every attempt (nothing is selected silently), attachment names, MIME types, sizes, opaque fileIds for moodle_download_file, and a Moodle grader page link for each student (the TA opens it to enter marks). Shared group submissions are listed once. Read-only: no grades are written.",
     {

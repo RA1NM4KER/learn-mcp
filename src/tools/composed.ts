@@ -12,6 +12,7 @@ import { formatMoodleDateTime } from "../format-date.js";
 import { mapAccountWideSites, type ConnectedSite, type MultiSiteContext } from "../multi-site-context.js";
 import { getNotificationsAccountWide } from "./notifications.js";
 import { getCalendarEventsAccountWide } from "./calendar.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 // Composed, read-only tools that merge a few raw Moodle calls into one
 // normalized, student-shaped answer. Deterministic date/status merging only —
@@ -486,14 +487,14 @@ export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteCo
 }
 
 export function registerComposedTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver, multiSite?: MultiSiteContext): void {
-  server.tool(
+  readOnlyTool(server,
     "course_overview",
     "One-call summary of a course for the student: identity, upcoming deadlines, course grade total, and recent announcements. Use this instead of chaining moodle_get_course + moodle_list_assignments + moodle_get_grades + moodle_get_forum_discussions when the student just wants 'catch me up on this course'.",
     { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
     async ({ courseId }) => withResolvedCourseListing(courseRefResolver, courseId, courseOverview),
   );
 
-  server.tool(
+  readOnlyTool(server,
     "upcoming_and_overdue",
     "Cross-course deadline view for the student: every assignment with a due date, across every connected SUNLearn environment, merged and sorted into Overdue / Due soon / Upcoming / Missed / Submitted, with submission and grading status already looked up. Assignments whose due date predates their own course's start (stale content inherited from a reused course shell) are set apart under 'Historical course content' instead of counted as outstanding work. Use this instead of chaining moodle_list_courses + moodle_list_assignments + moodle_get_assignment per course when the student asks 'what's due' or 'am I behind on anything'.",
     {},
@@ -502,7 +503,7 @@ export function registerComposedTools(server: McpServer, client: MoodleClient, c
     }),
   );
 
-  server.tool(
+  readOnlyTool(server,
     "student_brief",
     "Compact cross-course catch-up: authoritative deadline state plus recent notifications. Use for 'what should I know?', 'catch me up', or 'what needs my attention?'.",
     {},

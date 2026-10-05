@@ -7,6 +7,7 @@ import { RESOURCE_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { loadCourseContents } from "../moodle-loaders.js";
 import { isMoodleFileContent } from "../moodle-api.js";
 import { truncateText } from "../text.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 const FILE_MODS = new Set(["resource", "url", "folder"]);
 
@@ -95,7 +96,7 @@ async function listResources(
 
 /** `contentEnabled` gates only actual file *bytes* (fileId minting/download hints) — course material metadata (names, sizes) is always listed. See REMOTE_COURSE_CONTENT_ENABLED (oauth/env.ts). */
 export function registerFileTools(server: McpServer, courseRefResolver: CourseRefResolver, contentEnabled = true): void {
-  server.tool(
+  readOnlyTool(server,
     "moodle_list_resources",
     contentEnabled
       ? "List course materials grouped by their Moodle sections. Downloadable files include an opaque fileId and matching moodle://files/{fileId} resource URI; use either with the server, never a Moodle URL. External links are identified by name only and are not downloadable. Results are bounded; use filenameFilter to refine them."

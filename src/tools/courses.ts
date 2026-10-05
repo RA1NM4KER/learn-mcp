@@ -6,6 +6,7 @@ import { sanitizeAndTruncateHtml, truncateText } from "../text.js";
 import { COURSE_NOTICE_POLICY, COURSE_STRUCTURE_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { loadCourseContents, loadEnrolledCourses } from "../moodle-loaders.js";
 import { mapAccountWideSites, type MultiSiteContext } from "../multi-site-context.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 export interface CourseNotice {
   sectionName: string;
@@ -188,21 +189,21 @@ export function registerCourseTools(
   courseRefResolver: CourseRefResolver,
   multiSite?: MultiSiteContext,
 ): void {
-  server.tool(
+  readOnlyTool(server,
     "moodle_list_courses",
     "List all courses the student is currently enrolled in, across every connected SUNLearn environment. Usually the first call to make: gives the course IDs every other tool needs.",
     {},
     async () => ({ content: [{ type: "text" as const, text: await listCourses(client, multiSite) }] })
   );
 
-  server.tool(
+  readOnlyTool(server,
     "moodle_get_course",
     "Get the full structure of one course: its sections/weeks and every activity/resource in them. Use moodle_list_courses first to get the course ID.",
     { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
     async ({ courseId }) => withResolvedRef(courseRefResolver, "course", courseId, getCourse),
   );
 
-  server.tool(
+  readOnlyTool(server,
     "moodle_get_course_notices",
     "Read current course-section notices relevant to deadlines, submissions, practicals, demonstrations, and tests. Use this to verify a deadline when a PDF, forum post, or calendar entry conflicts with the current course page.",
     { courseId: RefSchema.describe("Course ID from moodle_list_courses") },

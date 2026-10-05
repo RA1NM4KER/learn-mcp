@@ -2,9 +2,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
 import { TEXT_OUTPUT_POLICY } from "../policy.js";
 import { truncateText } from "../text.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 export function registerSiteInfoTool(server: McpServer, client: MoodleClient): void {
-  server.tool(
+  readOnlyTool(server,
     "moodle_get_site_info",
     "Get information about your Moodle server and your account: school name, Moodle version, your name, and which APIs are enabled.",
     {},

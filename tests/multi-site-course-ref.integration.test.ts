@@ -63,7 +63,7 @@ function emsConfig(): Config {
 // Minimal fake McpServer that just captures the registered tool handler.
 function captureTool() {
   const handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>>();
-  const server = { tool: (name: string, _desc: string, _schema: unknown, handler: typeof handlers extends Map<string, infer H> ? H : never) => { handlers.set(name, handler); } };
+  const server = { tool: (name: string, _desc: string, _schema: unknown, _annotations: unknown, handler: typeof handlers extends Map<string, infer H> ? H : never) => { handlers.set(name, handler); } };
   return { server: server as never, handlers };
 }
 

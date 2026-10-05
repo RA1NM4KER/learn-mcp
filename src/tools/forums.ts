@@ -7,6 +7,7 @@ import { loadForumDiscussions, loadForums } from "../moodle-loaders.js";
 import type { MoodleDiscussion, MoodleForum } from "../moodle-api.js";
 import { FORUM_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { formatMoodleDateOnly } from "../format-date.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 // Moodle's `mod_forum_get_forum_discussions` wsfunction needs the forum
 // *instance* id (`forum.id`, the row in mdl_forum) — NOT the course-module
@@ -94,14 +95,14 @@ export async function getForumDiscussions(client: MoodleClient, forumId: number)
 }
 
 export function registerForumTools(server: McpServer, courseRefResolver: CourseRefResolver): void {
-  server.tool(
+  readOnlyTool(server,
     "moodle_list_forums",
     "List the forums in one of the student's courses (e.g. the course's Announcements/News forum, discussion boards). Use this to find a forum's ID before reading its posts with moodle_get_forum_discussions.",
     { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
     async ({ courseId }) => withResolvedCourseListing(courseRefResolver, courseId, listForums),
   );
 
-  server.tool(
+  readOnlyTool(server,
     "moodle_get_forum_discussions",
     "Read recent posts in a course forum: most useful for a course's Announcements forum, to see what the lecturer has posted (title, author, reply count, last activity, and the post body).",
     { forumId: RefSchema.describe("Forum ID from moodle_list_forums (the real forum id, not a course-module id)") },

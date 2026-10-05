@@ -6,6 +6,7 @@ import type { MultiSiteContext } from "../multi-site-context.js";
 import { FILE_TRANSFER_POLICY, PDF_TEXT_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { truncateText } from "../text.js";
 import { withOwningSite } from "./download.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 // Reads a PDF's text page by page, so a large report reaches the model as
 // text rather than as bytes. Only a page range is returned per call, and the
@@ -60,7 +61,7 @@ export function registerPdfTextTool(
   client: MoodleClient,
   multiSite?: MultiSiteContext,
 ): void {
-  server.tool(
+  readOnlyTool(server,
     "moodle_read_pdf_text",
     `Read the text of a PDF by page, for example a student's submitted report (from moodle_list_assignment_submissions). Returns up to ${PDF_TEXT_POLICY.maxPagesPerCall} pages per call, starting at startPage, so a large PDF is read in parts. Use the next start page in the output to continue. PDFs up to ${PDF_TEXT_POLICY.maxBytes / 1024 / 1024} MB are supported. The result is text only; scanned pages with no text layer return nothing. Read-only.`,
     {

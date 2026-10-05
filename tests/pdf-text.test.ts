@@ -36,7 +36,7 @@ const fileCalls = () => mockFetch.mock.calls.filter(([url]) => String(url).inclu
 
 function captureText(c: MoodleClient) {
   let handler: ((args: Record<string, unknown>, extra?: { signal?: AbortSignal }) => Promise<{ isError?: boolean; content: { text: string }[] }>) | undefined;
-  registerPdfTextTool({ tool: (_n: string, _d: string, _s: unknown, h: never) => { handler = h; } } as never, c);
+  registerPdfTextTool({ tool: (_n: string, _d: string, _s: unknown, _a: unknown, h: never) => { handler = h; } } as never, c);
   return handler!;
 }
 
@@ -100,7 +100,7 @@ describe("download refusals point at the text tool", () => {
     const fileId = await c.fileIdStore.seal({ userId: USER, courseId: 5, fileurl: FILE_URL, mime: "application/pdf", filename: "big.pdf", filesize: 55 * 1024 * 1024, assignmentId: 6326, submitterId: 1001 });
     mockFetch.mockImplementation(async () => json(statusWithFile("big.pdf", "application/pdf")));
     let handler: ((args: { fileId: string }) => Promise<{ isError?: boolean; content: { text: string }[] }>) | undefined;
-    registerDownloadTool({ tool: (_n: string, _d: string, _s: unknown, h: never) => { handler = h; } } as never, c, true, undefined, false);
+    registerDownloadTool({ tool: (_n: string, _d: string, _s: unknown, _a: unknown, h: never) => { handler = h; } } as never, c, true, undefined, false);
     const result = await handler!({ fileId });
     expect(result.content[0]!.text).toContain("moodle_read_pdf_text");
   });

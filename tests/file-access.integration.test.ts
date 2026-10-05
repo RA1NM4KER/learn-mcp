@@ -22,7 +22,7 @@ function capture(client: MoodleClient) {
   let resource: ((uri: URL, vars: { fileId: string }) => Promise<unknown>) | undefined;
   const prompts = new Map<string, (args: Record<string, string>) => Promise<unknown>>();
   const server = {
-    tool: (_name: string, _description: string, _schema: unknown, handler: typeof tool) => { tool = handler; },
+    tool: (_name: string, _description: string, _schema: unknown, _annotations: unknown, handler: typeof tool) => { tool = handler; },
     resource: (_name: string, _template: unknown, handler: typeof resource) => { resource = handler; },
     prompt: (name: string, _description: string, _schema: unknown, handler: (args: Record<string, string>) => Promise<unknown>) => prompts.set(name, handler),
   };

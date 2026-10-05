@@ -7,6 +7,7 @@ import { MoodleClient, MoodleClientError, MoodleTimeoutError } from "../moodle-c
 import type { MultiSiteContext } from "../multi-site-context.js";
 import { FILE_TRANSFER_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { withOwningSite } from "./download.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 // Saves a large file to the local download folder instead of embedding it in
 // the MCP response. Registered only by the local stdio server (see
@@ -61,7 +62,7 @@ export function registerSaveTool(
   downloadDir: string,
   multiSite?: MultiSiteContext,
 ): void {
-  server.tool(
+  readOnlyTool(server,
     "moodle_save_file",
     `Save a Moodle file (from moodle_list_resources or moodle_list_assignment_submissions) to the local download folder, for files too large to embed in a response (over ${Math.round(TEXT_OUTPUT_POLICY.maxEmbeddedBinaryFileBytes / 1024 / 1024)} MB). Returns the file name, size, and SHA-256, not the file contents. The folder is set on the server with MOODLE_MCP_DOWNLOAD_DIR.`,
     {

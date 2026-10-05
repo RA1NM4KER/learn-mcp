@@ -6,6 +6,7 @@ import { loadGrades } from "../moodle-loaders.js";
 import type { MoodleGradeItem } from "../moodle-api.js";
 import { GRADE_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { sanitizeAndTruncateHtml, truncateText } from "../text.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 export async function getGrades(client: MoodleClient, courseId: number): Promise<string> {
   if (!client.supports("gradereport_user_get_grade_items")) {
@@ -77,7 +78,7 @@ export async function getGrades(client: MoodleClient, courseId: number): Promise
 }
 
 export function registerGradeTools(server: McpServer, courseRefResolver: CourseRefResolver): void {
-  server.tool(
+  readOnlyTool(server,
     "moodle_get_grades",
     "Get the student's own grades for a course: every graded item (assignments, tests, quizzes), category, percentage, and feedback comment, plus the course total. Answers 'what's my grade in this course' or 'how did I do on X'.",
     { courseId: RefSchema.describe("Course ID from moodle_list_courses") },

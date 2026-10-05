@@ -7,6 +7,7 @@ import { TEXT_OUTPUT_POLICY } from "../policy.js";
 import { formatMoodleDateTime } from "../format-date.js";
 import { mapAccountWideSites, type ConnectedSite, type MultiSiteContext } from "../multi-site-context.js";
 import type { MoodleNotificationsResponse } from "../moodle-api.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 type MoodleNotification = MoodleNotificationsResponse["notifications"][number];
 
@@ -74,7 +75,7 @@ export async function getNotificationsAccountWide(
 }
 
 export function registerNotificationTools(server: McpServer, client: MoodleClient, multiSite?: MultiSiteContext): void {
-  server.tool(
+  readOnlyTool(server,
     "moodle_get_notifications",
     "Get the student's recent Moodle notifications (grade returns, assignment feedback, forum replies, deadline reminders, etc.) across every connected SUNLearn environment. Unread items are marked with 🔵.",
     { limit: z.number().int().min(1).max(100).optional().describe("Number of notifications to fetch (default: 20, max: 100)") },

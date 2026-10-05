@@ -6,6 +6,7 @@ import { QUIZ_ATTEMPT_POLICY, QUIZ_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../po
 import { loadCourseContents, loadQuizAttempts, loadQuizzes } from "../moodle-loaders.js";
 import { truncateText } from "../text.js";
 import { formatMoodleDateTime } from "../format-date.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 function formatDate(ts: number): string {
   return ts ? formatMoodleDateTime(ts) : "N/A";
@@ -94,14 +95,14 @@ export async function getQuizAttempts(client: MoodleClient, quizId: number): Pro
 }
 
 export function registerQuizTools(server: McpServer, courseRefResolver: CourseRefResolver): void {
-  server.tool(
+  readOnlyTool(server,
     "moodle_list_quizzes",
     "List the quizzes in one of the student's courses, with time limits, allowed attempts, and open/close dates.",
     { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
     async ({ courseId }) => withResolvedCourseListing(courseRefResolver, courseId, listQuizzes),
   );
 
-  server.tool(
+  readOnlyTool(server,
     "moodle_get_quiz_attempts",
     "Get the student's own past attempt history for one quiz: grades, states, and timing.",
     { quizId: RefSchema.describe("Quiz ID from moodle_list_quizzes") },

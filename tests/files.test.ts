@@ -33,7 +33,7 @@ function captureTool() {
   const handlers = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>();
   const schemas = new Map<string, { limit?: { parse: (value: unknown) => unknown } }>();
   const server = {
-    tool: (name: string, _desc: string, schema: { limit?: { parse: (value: unknown) => unknown } }, handler: (args: Record<string, unknown>) => Promise<unknown>) => {
+    tool: (name: string, _desc: string, schema: { limit?: { parse: (value: unknown) => unknown } }, _annotations: unknown, handler: (args: Record<string, unknown>) => Promise<unknown>) => {
       handlers.set(name, handler);
       schemas.set(name, schema);
     },

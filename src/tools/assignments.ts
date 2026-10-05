@@ -6,6 +6,7 @@ import { loadAssignments, loadCourseContents, loadSubmissionStatus } from "../mo
 import { ASSIGNMENT_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { truncateText } from "../text.js";
 import { formatMoodleDateTime } from "../format-date.js";
+import { readOnlyTool } from "./read-only-tool.js";
 
 function formatDate(ts: number): string {
   return ts ? formatMoodleDateTime(ts) : "No due date";
@@ -94,14 +95,14 @@ export async function getAssignment(client: MoodleClient, assignmentId: number):
 }
 
 export function registerAssignmentTools(server: McpServer, courseRefResolver: CourseRefResolver): void {
-  server.tool(
+  readOnlyTool(server,
     "moodle_list_assignments",
     "List all assignments the student has in a course, with due dates and max grades. Use this to answer 'what assignments do I have' or 'when is X due'. Returns assignment IDs for use with moodle_get_assignment.",
     { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
     async ({ courseId }) => withResolvedCourseListing(courseRefResolver, courseId, listAssignments),
   );
 
-  server.tool(
+  readOnlyTool(server,
     "moodle_get_assignment",
     "Check the student's own submission status and grade feedback for one assignment: 'have I submitted this', 'was it graded', 'what feedback did I get'.",
     { assignmentId: RefSchema.describe("Assignment ID from moodle_list_assignments") },

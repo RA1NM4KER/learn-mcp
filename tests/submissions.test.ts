@@ -110,7 +110,7 @@ async function client(): Promise<MoodleClient> {
 function capture(c: MoodleClient, contentEnabled = true) {
   const tools = new Map<string, (args: Record<string, unknown>) => Promise<{ isError?: boolean; content: { text: string }[] }>>();
   const server = {
-    tool: (name: string, _description: string, _schema: unknown, handler: never) => { tools.set(name, handler); },
+    tool: (name: string, _description: string, _schema: unknown, _annotations: unknown, handler: never) => { tools.set(name, handler); },
   };
   registerSubmissionTools(server as never, createAnchorOnlyResolver(c), contentEnabled);
   return tools;
