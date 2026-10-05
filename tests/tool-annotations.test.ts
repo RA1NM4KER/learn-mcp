@@ -36,7 +36,7 @@ describe("published tool descriptors", () => {
         openWorldHint: false,
       });
     }
-    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["moodle_list_assignment_submissions", "moodle_read_pdf_text", "moodle_download_file"]));
+    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["moodle_list_assignment_submissions", "moodle_download_file"]));
     await client.close();
   });
 

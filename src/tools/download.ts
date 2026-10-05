@@ -59,10 +59,9 @@ export function registerDownloadTool(
   saveToolAvailable = false,
 ): void {
   if (!contentEnabled) return;
-  // Refusal hints tell the model what to do instead of embedding a large file.
   const saveHint = saveToolAvailable
-    ? " For larger files, use moodle_save_file, which saves them to the local download folder. For PDFs, moodle_read_pdf_text reads the text page by page."
-    : " For PDFs, moodle_read_pdf_text reads the text page by page.";
+    ? " For larger files, use moodle_save_file, which saves them to the local download folder."
+    : "";
   readOnlyTool(server,
     "moodle_download_file",
     `Download a Moodle file by its opaque fileId: a course file (from moodle_list_resources) or a submission attachment (from moodle_list_assignment_submissions, teaching assistants only). Returns text for text/JSON/XML files; returns the raw bytes as an embedded resource for binary formats like PDFs, DOCX, images, up to ${EMBED_MAX_MB} MB.${saveHint} The server fetches the file, so you never need to fetch Moodle URLs directly.`,

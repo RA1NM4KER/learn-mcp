@@ -48,15 +48,6 @@ export const TEXT_OUTPUT_POLICY = {
   maxEmbeddedBinaryFileBytes: 5 * 1024 * 1024,
 } as const;
 
-/** Limits for moodle_read_pdf_text, which reads a PDF's text page by page. */
-export const PDF_TEXT_POLICY = {
-  /** Largest PDF the tool will download and parse in one call. */
-  maxBytes: 60 * 1024 * 1024,
-  defaultPagesPerCall: 5,
-  maxPagesPerCall: 20,
-  maxCharactersPerPage: 20_000,
-} as const;
-
 /**
  * Deadlines for file transfers. These cover the whole transfer, headers and
  * body included, so they bound a stalled download without relying on the
