@@ -87,6 +87,16 @@ export function fileLinkUrl(origin: string, token: string): string {
 
 const NOT_AVAILABLE = "This link is invalid, has expired, or the file is no longer available.";
 
+/**
+ * Logs the failing step (never the token or URL) and returns the generic 404.
+ * The reason is only in the Worker logs, so the user-facing response stays identical.
+ */
+function denied(reason: string, error?: unknown): Response {
+  const detail = error instanceof Error ? `${error.name}: ${error.message.slice(0, 160)}` : "";
+  console.error("file-link denied", reason, detail);
+  return notFound();
+}
+
 function notFound(): Response {
   return new Response(NOT_AVAILABLE, { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 }
@@ -109,28 +119,28 @@ export async function handleFileLinkRequest(request: Request, env: MoodleResolve
 
   const key = await deriveFileLinkKey(env.CREDENTIAL_ENCRYPTION_KEY);
   const link = await openFileLink(key, token);
-  if (!link) return notFound();
+  if (!link) return denied("token");
 
   let client: MoodleClient;
   try {
     const config = await resolveMoodleConfigForOAuthUser(link.ownerId, env);
     // A link is only honoured against the same Moodle site it was issued for.
-    if (config.baseUrl !== link.baseUrl) return notFound();
+    if (config.baseUrl !== link.baseUrl) return denied("site-mismatch");
     client = await MoodleClient.create(config);
-  } catch {
+  } catch (error) {
     // No linked account, a disconnected site, or a credential that fails closed all look the same as a bad link.
-    return notFound();
+    return denied("owner-config", error);
   }
 
   const { v: _v, ownerId: _ownerId, baseUrl: _baseUrl, exp: _exp, ...ref } = link;
   const current = await client.authorizeRef(ref);
-  if (!current) return notFound();
+  if (!current) return denied("authorize");
 
   let upstream: Response;
   try {
     upstream = await client.openFileStream(current.fileurl, FILE_LINK_POLICY.openTimeoutMs);
-  } catch {
-    return notFound();
+  } catch (error) {
+    return denied("stream-open", error);
   }
   return new Response(upstream.body, {
     status: 200,
