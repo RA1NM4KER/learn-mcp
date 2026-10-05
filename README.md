@@ -153,7 +153,12 @@ Typical workflow:
 3. `moodle_list_assignment_submissions` with either exact student numbers
    (up to 25 per call, kept as text so leading zeros survive), a group name or
    group ID, or both.
-4. Download the report with a submission `fileId` from step 3:
+4. Read a PDF report's text with `moodle_read_pdf_text`. It returns up to 20
+   pages per call from `startPage`, and tells you where to continue. This
+   works on the remote server too, so a large report reaches the model as text
+   rather than as bytes. PDFs up to 60 MB are supported. Scanned pages with no
+   text layer return nothing. Or download the file, as below.
+   Download the report with a submission `fileId` from step 3:
    `moodle_download_file` for files up to 5 MB (returned in the response), or
    `moodle_save_file` on the local server for larger files (saved to
    `MOODLE_MCP_DOWNLOAD_DIR`, default `~/Downloads/learn-mcp`).
