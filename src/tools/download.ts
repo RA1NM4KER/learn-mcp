@@ -52,8 +52,11 @@ function transferFailure(err: unknown): string {
 }
 
 /** Not registered at all when disabled — see REMOTE_COURSE_CONTENT_ENABLED (oauth/env.ts) — so the MCP tool list itself accurately reflects that full file retrieval is unavailable, not just an error message on call. */
-/** Issues a signed, expiring download link for a file. Provided on the remote Worker only. */
-export type FileLinkFor = (ref: FileRef) => Promise<string>;
+/**
+ * Issues a signed, expiring download link for a file. `baseUrl` is the Moodle
+ * site that owns the file (not necessarily the anchor site). Provided on the remote Worker only.
+ */
+export type FileLinkFor = (ref: FileRef, baseUrl: string) => Promise<string>;
 
 export function registerDownloadTool(
   server: McpServer,
@@ -82,7 +85,7 @@ export function registerDownloadTool(
           if (!ref) return null;
           // Refuse from the metadata before fetching, so a large file costs no transfer.
           if (!isTextMime(ref.mime) && ref.filesize > EMBED_MAX_BYTES) {
-            return { ref, tooLarge: true as const, link: fileLinkFor ? await fileLinkFor(ref) : undefined };
+            return { ref, tooLarge: true as const, link: fileLinkFor ? await fileLinkFor(ref, owner.baseUrl) : undefined };
           }
           const downloaded = await owner.downloadFile(ref.fileurl, {
             maxBytes: EMBED_MAX_BYTES,

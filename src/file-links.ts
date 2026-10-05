@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { FileRefSchema, type FileRef } from "./file-id-store.js";
 import { MoodleClient } from "./moodle-client.js";
-import { resolveMoodleConfigForOAuthUser, type MoodleResolverEnv } from "./linking/resolve-config.js";
+import { resolveMoodleConfigForSite, type MoodleResolverEnv } from "./linking/resolve-config.js";
+import { getSiteByBaseUrl } from "./sunlearn-sites.js";
 import { FILE_LINK_POLICY } from "./policy.js";
 
 // Signed, expiring download links for large files on the remote Worker.
@@ -123,8 +124,11 @@ export async function handleFileLinkRequest(request: Request, env: MoodleResolve
 
   let client: MoodleClient;
   try {
-    const config = await resolveMoodleConfigForOAuthUser(link.ownerId, env);
-    // A link is only honoured against the same Moodle site it was issued for.
+    // The file's own site, from the link. Its credential is the owner's, for that site only.
+    const site = getSiteByBaseUrl(link.baseUrl);
+    if (!site) return denied("unknown-site");
+    const config = await resolveMoodleConfigForSite(link.ownerId, site, env);
+    if (!config) return denied("no-credential-for-site");
     if (config.baseUrl !== link.baseUrl) return denied("site-mismatch");
     client = await MoodleClient.create(config);
   } catch (error) {

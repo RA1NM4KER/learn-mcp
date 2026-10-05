@@ -137,9 +137,9 @@ export async function handleMcpRequest(
     // Signed one-hour links for files too large to embed (see src/file-links.ts).
     // Only the OAuth lane gets them: the legacy bearer lane has no per-user identity to re-check.
     const fileLinkFor = !ctx.props.legacy && env.CREDENTIAL_ENCRYPTION_KEY
-      ? async (ref: FileRef) => fileLinkUrl(
+      ? async (ref: FileRef, siteBaseUrl: string) => fileLinkUrl(
         new URL(request.url).origin,
-        await sealFileLink(await deriveFileLinkKey(env.CREDENTIAL_ENCRYPTION_KEY!), ref, userId, config.baseUrl, FILE_LINK_POLICY.ttlMs),
+        await sealFileLink(await deriveFileLinkKey(env.CREDENTIAL_ENCRYPTION_KEY!), ref, userId, siteBaseUrl, FILE_LINK_POLICY.ttlMs),
       )
       : undefined;
     const server = createSunLearnServer(client, resolver, multiSite, contentEnabled, undefined, fileLinkFor);
