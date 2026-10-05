@@ -285,7 +285,10 @@ export class MoodleClient {
   async authorizeRef(ref: FileRef): Promise<FileRef | null> {
     try { this.assertSafeFileUrl(ref.fileurl); } catch (error) {
       // The error text names the failed check, never the URL.
-      console.error("authorizeRef url check", error instanceof Error ? error.message.slice(0, 120) : "non-error");
+      // Hostnames are public and needed to see a mismatch; paths and tokens are never logged.
+      let fileHost = "unparseable";
+      try { fileHost = new URL(ref.fileurl).host; } catch { /* keep the placeholder */ }
+      console.error("authorizeRef url check", error instanceof Error ? error.message.slice(0, 120) : "non-error", `fileHost=${fileHost}`, `clientHost=${this.baseHost}`);
       return null;
     }
     try {
