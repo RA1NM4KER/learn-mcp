@@ -303,7 +303,10 @@ export class MoodleClient {
             status.lastattempt?.teamsubmission,
             ...status.previousattempts.map((attempt) => attempt.submission),
           ];
-          return submissions.some((submission) => submission !== undefined && hasFile(submission.plugins)) ? ref : null;
+          const found = submissions.some((submission) => submission !== undefined && hasFile(submission.plugins));
+          // Counts only: no names, IDs, or URLs reach the logs.
+          console.error("authorizeRef status", `attempts=${submissions.filter((s) => s !== undefined).length}`, `files=${submissions.reduce((n, s) => n + (s?.plugins ?? []).reduce((m, p) => m + p.fileareas.reduce((k, a) => k + a.files.length, 0), 0), 0)}`, `match=${found}`);
+          return found ? ref : null;
         }
         // Fileids minted before submitterId existed: the whole-assignment check.
         const response = await this.call(
@@ -320,6 +323,7 @@ export class MoodleClient {
       )) ? ref : null;
     } catch (error) {
       if (error instanceof MoodleTimeoutError) throw error;
+      console.error("authorizeRef failed", error instanceof Error ? `${error.name}: ${error.message.slice(0, 120)}` : "non-error");
       return null;
     }
   }
