@@ -5,6 +5,7 @@ import { MoodleClient, MoodleClientError, MoodleTimeoutError } from "../moodle-c
 import type { MultiSiteContext } from "../multi-site-context.js";
 import { FILE_TRANSFER_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
 import { truncateText } from "../text.js";
+import type { FileRef } from "../file-id-store.js";
 import { readOnlyTool } from "./read-only-tool.js";
 
 const EMBED_MAX_BYTES = TEXT_OUTPUT_POLICY.maxEmbeddedBinaryFileBytes;
@@ -51,12 +52,16 @@ function transferFailure(err: unknown): string {
 }
 
 /** Not registered at all when disabled — see REMOTE_COURSE_CONTENT_ENABLED (oauth/env.ts) — so the MCP tool list itself accurately reflects that full file retrieval is unavailable, not just an error message on call. */
+/** Issues a signed, expiring download link for a file. Provided on the remote Worker only. */
+export type FileLinkFor = (ref: FileRef) => Promise<string>;
+
 export function registerDownloadTool(
   server: McpServer,
   client: MoodleClient,
   contentEnabled = true,
   multiSite?: MultiSiteContext,
   saveToolAvailable = false,
+  fileLinkFor?: FileLinkFor,
 ): void {
   if (!contentEnabled) return;
   const saveHint = saveToolAvailable
@@ -77,7 +82,7 @@ export function registerDownloadTool(
           if (!ref) return null;
           // Refuse from the metadata before fetching, so a large file costs no transfer.
           if (!isTextMime(ref.mime) && ref.filesize > EMBED_MAX_BYTES) {
-            return { ref, tooLarge: true as const };
+            return { ref, tooLarge: true as const, link: fileLinkFor ? await fileLinkFor(ref) : undefined };
           }
           const downloaded = await owner.downloadFile(ref.fileurl, {
             maxBytes: EMBED_MAX_BYTES,
@@ -96,8 +101,14 @@ export function registerDownloadTool(
         return errorText("fileId is invalid, expired, or was not issued to the current user. Re-run moodle_list_resources or moodle_list_assignment_submissions to get fresh IDs.");
       }
       if (result.tooLarge) {
+        const size = `${(result.ref.filesize / 1024 / 1024).toFixed(1)} MB`;
+        if (result.link) {
+          return errorText(
+            `This file is ${size}. The MCP embeds files up to ${EMBED_MAX_MB} MB, so it was not downloaded. Give the user this download link, which works for one hour and opens the file directly in a browser: ${result.link}`,
+          );
+        }
         return errorText(
-          `This file is ${(result.ref.filesize / 1024 / 1024).toFixed(1)} MB. The MCP embeds files up to ${EMBED_MAX_MB} MB, so it was not downloaded.${saveHint}`,
+          `This file is ${size}. The MCP embeds files up to ${EMBED_MAX_MB} MB, so it was not downloaded.${saveHint}`,
         );
       }
 

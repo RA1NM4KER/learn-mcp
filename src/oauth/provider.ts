@@ -5,6 +5,7 @@ import { handleLegacyRoute, constantTimeEqual, jsonResponse } from "../legacy-ro
 import { handleMarketingRoute } from "../marketing-routes.js";
 import { handleAuthorize, handleAuthorizeLink, handleAuthorizeContinue, handleAuthorizeDisconnect, handleAuthorizeDeleteData, handleConsentSubmit } from "./routes.js";
 import { DEFAULT_USER_ID } from "../linking/resolve-config.js";
+import { handleFileLinkRequest } from "../file-links.js";
 import { issuerForRequest } from "./issuer.js";
 import { PRODUCT_NAME } from "../brand.js";
 
@@ -33,6 +34,9 @@ async function defaultHandlerFetch(request: Request, env: Env): Promise<Response
   }
   if (url.pathname === "/authorize/consent" && request.method === "POST") {
     return handleConsentSubmit(request, env);
+  }
+  if (url.pathname.startsWith("/files/") && request.method === "GET") {
+    return handleFileLinkRequest(request, env);
   }
 
   const marketing = handleMarketingRoute(url.pathname, request.method);

@@ -48,6 +48,14 @@ export const TEXT_OUTPUT_POLICY = {
   maxEmbeddedBinaryFileBytes: 5 * 1024 * 1024,
 } as const;
 
+/** Signed download links for large files on the remote Worker (src/file-links.ts). */
+export const FILE_LINK_POLICY = {
+  /** How long a link works after it is issued. */
+  ttlMs: 60 * 60 * 1000,
+  /** How long the Worker waits for Moodle to start sending the file. */
+  openTimeoutMs: 60_000,
+} as const;
+
 /**
  * Deadlines for file transfers. These cover the whole transfer, headers and
  * body included, so they bound a stalled download without relying on the

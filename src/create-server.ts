@@ -5,6 +5,7 @@ import type { MultiSiteContext } from "./multi-site-context.js";
 import type { CourseRefResolver } from "./course-ref-resolver.js";
 import { registerResources } from "./resources/index.js";
 import { registerPrompts } from "./prompts/index.js";
+import type { FileLinkFor } from "./tools/download.js";
 
 // "learn-mcp" is the MCP protocol's self-reported server name/version (what
 // an MCP client shows during initialize) — pure presentation, like a
@@ -36,9 +37,10 @@ export function createSunLearnServer(
   multiSite?: MultiSiteContext,
   contentEnabled = true,
   downloadDir?: string,
+  fileLinkFor?: FileLinkFor,
 ): McpServer {
   const server = new McpServer(LEARN_MCP_SERVER_INFO);
-  registerAllTools(server, client, courseRefResolver, multiSite, contentEnabled, downloadDir);
+  registerAllTools(server, client, courseRefResolver, multiSite, contentEnabled, downloadDir, fileLinkFor);
   registerResources(server, client, contentEnabled);
   registerPrompts(server);
   return server;

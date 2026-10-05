@@ -2,6 +2,9 @@ import type { OAuthResourceContext } from "@cloudflare/workers-oauth-provider";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { MoodleClient, MoodleTimeoutError } from "./moodle-client.js";
 import { createSunLearnServer } from "./create-server.js";
+import { deriveFileLinkKey, fileLinkUrl, sealFileLink } from "./file-links.js";
+import type { FileRef } from "./file-id-store.js";
+import { FILE_LINK_POLICY } from "./policy.js";
 import type { MultiSiteContext } from "./multi-site-context.js";
 import { CourseRefResolver, createAnchorOnlyResolver } from "./course-ref-resolver.js";
 import { GlobalRefStore } from "./global-ref.js";
@@ -131,7 +134,15 @@ export async function handleMcpRequest(
     // file-content access off quickly in response to future guidance, not to
     // default to a locked-down state.
     const contentEnabled = env.REMOTE_COURSE_CONTENT_ENABLED !== "false";
-    const server = createSunLearnServer(client, resolver, multiSite, contentEnabled);
+    // Signed one-hour links for files too large to embed (see src/file-links.ts).
+    // Only the OAuth lane gets them: the legacy bearer lane has no per-user identity to re-check.
+    const fileLinkFor = !ctx.props.legacy && env.CREDENTIAL_ENCRYPTION_KEY
+      ? async (ref: FileRef) => fileLinkUrl(
+        new URL(request.url).origin,
+        await sealFileLink(await deriveFileLinkKey(env.CREDENTIAL_ENCRYPTION_KEY!), ref, userId, config.baseUrl, FILE_LINK_POLICY.ttlMs),
+      )
+      : undefined;
+    const server = createSunLearnServer(client, resolver, multiSite, contentEnabled, undefined, fileLinkFor);
     // Stateless (no sessionIdGenerator) + JSON response mode: each request is
     // handled by a fresh transport/client, and the JSON-RPC response comes
     // back as a normal application/json body instead of an SSE stream — this

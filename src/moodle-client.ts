@@ -247,10 +247,42 @@ export class MoodleClient {
     }
   }
 
+  /**
+   * Open a file for streaming straight to a client, with no buffering. Only
+   * the response headers are bounded here; the caller streams the body.
+   * The Moodle token is attached to the outbound request only.
+   */
+  async openFileStream(fileurl: string, timeoutMs = FILE_TRANSFER_POLICY.embedTimeoutMs): Promise<Response> {
+    this.assertSafeFileUrl(fileurl);
+    const parsed = new URL(fileurl);
+    parsed.searchParams.set("token", this.token);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(parsed.toString(), { signal: controller.signal });
+      if (!res.ok) throw new MoodleClientError(`Moodle returned HTTP ${res.status} for this file.`, "api");
+      return res;
+    } catch (error) {
+      if (error instanceof MoodleClientError) throw error;
+      if (error instanceof Error && error.name === "AbortError") throw new FileTransferTimeoutError(Math.round(timeoutMs / 1000));
+      throw new MoodleClientError("Unable to reach Moodle while downloading the file. Please try again.", "network");
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /** Validate a sealed file ref and re-check Moodle's current course access. */
   async authorizeFile(fileId: string): Promise<FileRef | null> {
     const ref = await this.fileIdStore.open(fileId, this.userId);
     if (!ref) return null;
+    return this.authorizeRef(ref);
+  }
+
+  /**
+   * Re-check Moodle's current access for an already-opened file reference.
+   * Used by sealed fileIds and by signed download links, which carry the same reference.
+   */
+  async authorizeRef(ref: FileRef): Promise<FileRef | null> {
     try { this.assertSafeFileUrl(ref.fileurl); } catch { return null; }
     try {
       if (ref.assignmentId !== undefined) {
