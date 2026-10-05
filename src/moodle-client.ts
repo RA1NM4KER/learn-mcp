@@ -283,7 +283,11 @@ export class MoodleClient {
    * Used by sealed fileIds and by signed download links, which carry the same reference.
    */
   async authorizeRef(ref: FileRef): Promise<FileRef | null> {
-    try { this.assertSafeFileUrl(ref.fileurl); } catch { return null; }
+    try { this.assertSafeFileUrl(ref.fileurl); } catch (error) {
+      // The error text names the failed check, never the URL.
+      console.error("authorizeRef url check", error instanceof Error ? error.message.slice(0, 120) : "non-error");
+      return null;
+    }
     try {
       if (ref.assignmentId !== undefined) {
         // Submission attachments are authorised by the assignment's current
