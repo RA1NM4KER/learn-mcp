@@ -39,7 +39,10 @@ describe("credential-crypto", () => {
   it("fails on tampered ciphertext", async () => {
     const key = await importCredentialKey(randomKeyB64Url());
     const envelope = await encryptCredential(key, "user1", BASE_URL, "secret");
-    const flipped = envelope.slice(0, -1) + (envelope.at(-1) === "A" ? "B" : "A");
+    // Change a character in the middle, not the last one: the last base64 character can carry
+    // only padding bits, and changing those leaves the decoded bytes (and decryption) unchanged.
+    const mid = Math.floor(envelope.length / 2);
+    const flipped = envelope.slice(0, mid) + (envelope[mid] === "A" ? "B" : "A") + envelope.slice(mid + 1);
     await expect(decryptCredential(key, "user1", BASE_URL, flipped)).rejects.toThrow(CredentialDecryptionError);
   });
 
