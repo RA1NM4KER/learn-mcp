@@ -22,7 +22,7 @@ An independent student project, not operated or endorsed by Stellenbosch Univers
 | Site | Host | Faculties |
 | --- | --- | --- |
 | SUNLearn | `learn.sun.ac.za` | University main site |
-| STEMLearn | `stemlearn.sun.ac.za` | |
+| STEMLearn | `stemlearn.sun.ac.za` | AgriSciences, Science, Engineering |
 | EMSLearn | `emslearn.sun.ac.za` | Economic & Management Science, Military Science |
 | SocSciLearn | `socscilearn.sun.ac.za` | Education, Law, Arts & Social Sciences, Theology |
 | FMHSLearn | `fmhslearn.sun.ac.za` | Medicine & Health Sciences |
