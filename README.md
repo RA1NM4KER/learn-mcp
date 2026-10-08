@@ -17,6 +17,16 @@ your own machine with your own Moodle token and any MCP client can answer questi
 
 An independent student project, not operated or endorsed by Stellenbosch University.
 
+### Supported sites
+
+| Site | Host | Faculties |
+| --- | --- | --- |
+| SUNLearn | `learn.sun.ac.za` | University main site |
+| STEMLearn | `stemlearn.sun.ac.za` | |
+| EMSLearn | `emslearn.sun.ac.za` | Economic & Management Science, Military Science |
+| SocSciLearn | `socscilearn.sun.ac.za` | Education, Law, Arts & Social Sciences, Theology |
+| FMHSLearn | `fmhslearn.sun.ac.za` | Medicine & Health Sciences |
+
 ```bash
 npm install && npx playwright install chromium
 npm run auth && npm run build      # sign in once through your institution's SSO
