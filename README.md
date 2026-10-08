@@ -23,17 +23,10 @@ npm run auth && npm run build      # sign in once through your institution's SSO
 claude mcp add learn -- node /absolute/path/to/learn-mcp/dist/server.js
 ```
 
-Learn MCP is a read-only [MCP](https://modelcontextprotocol.io) server that
-lets an AI assistant (ChatGPT, Claude, or any MCP client) answer questions
-about a student's own Moodle-based courses: courses, assignments, deadlines,
-grades, announcements, calendar events, quizzes, forums, and course files.
-
-It is currently tested against Stellenbosch University's Moodle
-environments (SUNLearn, STEMLearn, EMSLearn, SocSciLearn, FMHSLearn), but
-the codebase is not Stellenbosch-specific: it speaks the standard Moodle web
-service API and works against any Moodle instance reachable by URL and
-token. Learn MCP is an independent student project. It is not operated,
-reviewed, or endorsed by Stellenbosch University or any other institution.
+It covers courses, assignments, deadlines, grades, announcements, calendar events, quizzes,
+forums and course files. The codebase is not otherwise Stellenbosch-specific (it speaks the
+standard Moodle web service API), but the SU sites are the only ones tested and supported.
+Learn MCP is not operated, reviewed or endorsed by Stellenbosch University or any other institution.
 
 **Status:** the hosted remote server (`sunlearn-mcp.kefas.co.za`) is
 currently in **private preview** (see [Access control](#access-control)
