@@ -1,17 +1,21 @@
 # Learn MCP
 
-**Ask Claude or ChatGPT about your Moodle courses — deadlines, grades, announcements and files.**
+**Ask Claude or ChatGPT about your Stellenbosch University courses — deadlines, grades, announcements and files.**
 
 [![License](https://img.shields.io/github/license/RA1NM4KER/sunlearn-mcp)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/RA1NM4KER/sunlearn-mcp)](https://github.com/RA1NM4KER/sunlearn-mcp/releases/latest)
 
-Learn MCP is a **read-only** [MCP](https://modelcontextprotocol.io) server for Moodle. Run it on
+Learn MCP is a **read-only** [MCP](https://modelcontextprotocol.io) server built for Stellenbosch
+University's Moodle sites — **SUNLearn, STEMLearn, EMSLearn, SocSciLearn and FMHSLearn**. Run it on
 your own machine with your own Moodle token and any MCP client can answer questions like
 "what is due this week?" or "what did I score on the last quiz?".
 
+- **Built for SU** — sign-in goes through the university's SSO, and several SU sites can be linked to one account.
 - **Read-only** — it never submits, edits or deletes anything in Moodle.
 - **Local first** — in stdio mode your token stays in `.auth/token.json` on your machine.
-- **Works with any Moodle** — tested on Stellenbosch University (SUNLearn, STEMLearn and others), built on the standard Moodle web service API.
+- **Other Moodle sites** — it speaks the standard Moodle web service API, so local mode can be pointed at another Moodle with `MOODLE_URL` and `MOODLE_TOKEN`, but only the SU sites are tested and supported.
+
+An independent student project, not operated or endorsed by Stellenbosch University.
 
 ```bash
 npm install && npx playwright install chromium
