@@ -1,5 +1,24 @@
 # Learn MCP
 
+**Ask Claude or ChatGPT about your Moodle courses — deadlines, grades, announcements and files.**
+
+[![License](https://img.shields.io/github/license/RA1NM4KER/sunlearn-mcp)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/RA1NM4KER/sunlearn-mcp)](https://github.com/RA1NM4KER/sunlearn-mcp/releases/latest)
+
+Learn MCP is a **read-only** [MCP](https://modelcontextprotocol.io) server for Moodle. Run it on
+your own machine with your own Moodle token and any MCP client can answer questions like
+"what is due this week?" or "what did I score on the last quiz?".
+
+- **Read-only** — it never submits, edits or deletes anything in Moodle.
+- **Local first** — in stdio mode your token stays in `.auth/token.json` on your machine.
+- **Works with any Moodle** — tested on Stellenbosch University (SUNLearn, STEMLearn and others), built on the standard Moodle web service API.
+
+```bash
+npm install && npx playwright install chromium
+npm run auth && npm run build      # sign in once through your institution's SSO
+claude mcp add learn -- node /absolute/path/to/learn-mcp/dist/server.js
+```
+
 Learn MCP is a read-only [MCP](https://modelcontextprotocol.io) server that
 lets an AI assistant (ChatGPT, Claude, or any MCP client) answer questions
 about a student's own Moodle-based courses: courses, assignments, deadlines,
