@@ -2,8 +2,8 @@
 
 **Ask Claude or ChatGPT about your Stellenbosch University courses — deadlines, grades, announcements and files.**
 
-[![License](https://img.shields.io/github/license/RA1NM4KER/sunlearn-mcp)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/RA1NM4KER/sunlearn-mcp)](https://github.com/RA1NM4KER/sunlearn-mcp/releases/latest)
+[![License](https://img.shields.io/github/license/RA1NM4KER/learn-mcp)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/RA1NM4KER/learn-mcp)](https://github.com/RA1NM4KER/learn-mcp/releases/latest)
 
 Learn MCP is a **read-only** [MCP](https://modelcontextprotocol.io) server built for Stellenbosch
 University's Moodle sites — **SUNLearn, STEMLearn, EMSLearn, SocSciLearn and FMHSLearn**. Run it on
@@ -38,7 +38,7 @@ forums and course files. The codebase is not otherwise Stellenbosch-specific (it
 standard Moodle web service API), but the SU sites are the only ones tested and supported.
 Learn MCP is not operated, reviewed or endorsed by Stellenbosch University or any other institution.
 
-**Status:** the hosted remote server (`sunlearn-mcp.kefas.co.za`) is
+**Status:** the hosted remote server (`learnmcp.kefas.co.za`) is
 currently in **private preview** (see [Access control](#access-control)
 below). The local stdio mode described below has no such restriction: it
 runs entirely under your own Moodle token.

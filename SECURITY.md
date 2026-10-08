@@ -8,7 +8,7 @@ Security fixes are applied to the latest release and the `main` branch.
 
 Please do not disclose security vulnerabilities in a public issue. Use **Security → Report a vulnerability** to submit a private report:
 
-https://github.com/RA1NM4KER/sunlearn-mcp/security/advisories/new
+https://github.com/RA1NM4KER/learn-mcp/security/advisories/new
 
 Include the affected version, whether you use local (stdio) or remote mode, reproduction steps, and impact.
 

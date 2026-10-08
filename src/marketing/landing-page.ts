@@ -157,7 +157,7 @@ ${MARKETING_CSS}
         </details>
         <details>
           <summary>Something isn't working, or I have a question.</summary>
-          <p>Reach out via the project's <a href="https://github.com/RA1NM4KER/sunlearn-mcp" target="_blank" rel="noopener">GitHub page</a>.</p>
+          <p>Reach out via the project's <a href="https://github.com/RA1NM4KER/learn-mcp" target="_blank" rel="noopener">GitHub page</a>.</p>
         </details>
       </div>
     </div>

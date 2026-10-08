@@ -283,7 +283,7 @@ export function renderMarketingHeader(options: MarketingNavOptions = {}): string
         <a href="/"${isCurrent("product")}>Product</a>
         <a href="/docs"${isCurrent("docs")}>Docs</a>
         <a href="/privacy"${isCurrent("privacy")}>Privacy</a>
-        <a href="https://github.com/RA1NM4KER/sunlearn-mcp" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/RA1NM4KER/learn-mcp" target="_blank" rel="noopener">GitHub</a>
       </nav>
       <a class="mkt-preview-badge" href="/#faq">Private preview</a>
     </div>
@@ -295,7 +295,7 @@ export function renderMarketingFooter(): string {
     <div class="mkt-footer-inner">
       <span class="mkt-footer-brand">${PRODUCT_NAME}</span>
       <nav class="mkt-footer-links" aria-label="Footer">
-        <a href="/docs">Docs</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="https://github.com/RA1NM4KER/sunlearn-mcp" target="_blank" rel="noopener">GitHub</a>
+        <a href="/docs">Docs</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="https://github.com/RA1NM4KER/learn-mcp" target="_blank" rel="noopener">GitHub</a>
       </nav>
     </div>
     <p class="mkt-footer-note">${PRODUCT_NAME} is an independent student project. It is not operated, reviewed, or endorsed by Stellenbosch University.</p>

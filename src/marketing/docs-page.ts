@@ -71,7 +71,7 @@ export function renderDocsIndexPage(): string {
     <div class="mkt-faq" style="max-width: none;">
       <details>
         <summary>I want to see the technical/developer reference</summary>
-        <p>The underlying MCP tools and integration details are documented in the project's <a href="https://github.com/RA1NM4KER/sunlearn-mcp" target="_blank" rel="noopener">GitHub repository</a>.</p>
+        <p>The underlying MCP tools and integration details are documented in the project's <a href="https://github.com/RA1NM4KER/learn-mcp" target="_blank" rel="noopener">GitHub repository</a>.</p>
       </details>
     </div>`
     : `
@@ -91,7 +91,7 @@ export function renderDocsIndexPage(): string {
       </details>
       <details>
         <summary>I want to see the technical/developer reference</summary>
-        <p>The underlying MCP tools and integration details are documented in the project's <a href="https://github.com/RA1NM4KER/sunlearn-mcp" target="_blank" rel="noopener">GitHub repository</a>.</p>
+        <p>The underlying MCP tools and integration details are documented in the project's <a href="https://github.com/RA1NM4KER/learn-mcp" target="_blank" rel="noopener">GitHub repository</a>.</p>
       </details>
     </div>`;
 

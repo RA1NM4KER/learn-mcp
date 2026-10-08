@@ -4,7 +4,7 @@ Guidance for coding agents (Claude Code, Codex, etc.) working in this repo.
 
 ## What this is
 
-SUNLearn MCP is a **read-only** MCP server over a student's Moodle account.
+Learn MCP is a **read-only** MCP server over a student's Moodle account.
 It never calls a Moodle write API and never exposes Moodle tokens,
 authenticated Moodle file URLs, or filesystem paths. Local **stdio is the
 primary supported deployment model** (`src/server.ts`). `src/worker.ts`
