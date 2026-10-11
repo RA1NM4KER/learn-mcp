@@ -85,3 +85,5 @@ export async function mapWithConcurrency<T, R>(
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
   return results;
 }
+
+export const PAGE_POLICY = { maxMedia: 30, maxContentCharacters: 30_000 } as const;

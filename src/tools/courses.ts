@@ -125,7 +125,7 @@ export async function getCourse(client: MoodleClient, courseId: number): Promise
     lines.push(`### ${truncateText(section.name || "General", TEXT_OUTPUT_POLICY.maxLabelCharacters)}`);
     if (summary) lines.push(summary, "");
     for (const mod of rendered) {
-      lines.push(`- \`${truncateText(mod.modname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}\` **${truncateText(mod.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**`);
+      lines.push(`- \`${truncateText(mod.modname, TEXT_OUTPUT_POLICY.maxLabelCharacters)}\` **${truncateText(mod.name, TEXT_OUTPUT_POLICY.maxLabelCharacters)}**${mod.modname === "page" ? ` (pageModuleId: ${mod.id}; read with moodle_get_page)` : ""}`);
     }
   }
   if (omittedModules || omittedSections) {

@@ -1,6 +1,6 @@
 import type { MoodleClient } from "./moodle-client.js";
 import {
-  MoodleAssignmentsResponseSchema, MoodleCalendarResponseSchema, MoodleCourseContentsSchema, MoodleCourseSchema,
+  MoodlePagesResponseSchema, MoodleAssignmentsResponseSchema, MoodleCalendarResponseSchema, MoodleCourseContentsSchema, MoodleCourseSchema,
   MoodleDiscussionsResponseSchema, MoodleForumSchema, MoodleGradeReportSchema, MoodleNotificationsResponseSchema,
   MoodleQuizAttemptsResponseSchema, MoodleQuizzesResponseSchema, MoodleSubmissionStatusSchema,
   MoodleAllowedGroupsSchema, MoodleAssignParticipantsSchema, MoodleAssignSubmissionsResponseSchema,
@@ -66,3 +66,6 @@ export const loadAssignmentSubmissions = (client: MoodleClient, assignId: number
 
 export const loadAssignmentSubmissionStatus = (client: MoodleClient, assignId: number, userId: number) =>
   client.call("mod_assign_get_submission_status", { assignid: assignId, userid: userId }, MoodleAssignSubmissionStatusSchema);
+
+export const loadPages = (client: MoodleClient, courseId: number) =>
+  client.call("mod_page_get_pages_by_courses", { "courseids[0]": courseId }, MoodlePagesResponseSchema);

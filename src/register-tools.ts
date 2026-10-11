@@ -1,3 +1,4 @@
+import { registerPageTools } from "./tools/pages.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "./moodle-client.js";
 import type { CourseRefResolver } from "./course-ref-resolver.js";
@@ -27,6 +28,7 @@ export function registerAllTools(
   fileLinkFor?: FileLinkFor,
 ): void {
   registerCourseTools(server, client, courseRefResolver, multiSite);
+  registerPageTools(server, courseRefResolver, contentEnabled);
   registerFileTools(server, courseRefResolver, contentEnabled);
   // Saving to disk exists only on the local server, which passes downloadDir.
   registerDownloadTool(server, client, contentEnabled, multiSite, downloadDir !== undefined, fileLinkFor);

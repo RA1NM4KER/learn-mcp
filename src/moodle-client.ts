@@ -2,7 +2,7 @@ import type { Config } from "./config.js";
 import { DEFAULT_MAX_FILE_MB, DEFAULT_REQUEST_TIMEOUT_MS } from "./config.js";
 import { FILE_TRANSFER_POLICY } from "./policy.js";
 import { FileIdStore, type FileRef } from "./file-id-store.js";
-import { isMoodleFileContent, MoodleAssignSubmissionStatusSchema, MoodleAssignSubmissionsResponseSchema, MoodleCourseContentsSchema, MoodleErrorResponseSchema, MoodleLoginResponseSchema, MoodleSiteInfoSchema } from "./moodle-api.js";
+import { isMoodleFileContent, MoodlePagesResponseSchema, MoodleCourseSchema, MoodleAssignSubmissionStatusSchema, MoodleAssignSubmissionsResponseSchema, MoodleCourseContentsSchema, MoodleErrorResponseSchema, MoodleLoginResponseSchema, MoodleSiteInfoSchema } from "./moodle-api.js";
 import type { z } from "zod";
 
 export interface DownloadedFile {
@@ -325,6 +325,13 @@ export class MoodleClient {
         return found ? ref : null;
       }
       const sections = await this.call("core_course_get_contents", { courseid: ref.courseId }, MoodleCourseContentsSchema);
+      if (ref.pageModuleId !== undefined) {
+        const courses = await this.call("core_enrol_get_users_courses", { userid: this.userId }, MoodleCourseSchema.array());
+        if (!courses.some(course => course.id === ref.courseId)) return null;
+        if (!sections.some(section => section.modules.some(mod => mod.modname === "page" && mod.id === ref.pageModuleId))) return null;
+        const pages = await this.call("mod_page_get_pages_by_courses", { "courseids[0]": ref.courseId }, MoodlePagesResponseSchema);
+        return pages.pages.some(page => page.course === ref.courseId && page.coursemodule === ref.pageModuleId && page.contentfiles.some(file => file.fileurl === ref.fileurl)) ? ref : null;
+      }
       return sections.some((section) => section.modules.some((mod) =>
         (mod.contents ?? []).some((file) => isMoodleFileContent(file) && file.fileurl === ref.fileurl),
       )) ? ref : null;

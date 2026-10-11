@@ -49,6 +49,18 @@ Both modes register the same tools/resources/prompts via
 `createSunLearnServer()` (`src/create-server.ts`); only the transport and
 identity model differ.
 
+`moodle_get_course` lists a `pageModuleId` for each Moodle Page activity.
+Pass it with the same `courseId` to `moodle_get_page` to read page text,
+tables and image alt text. Attached images and PDFs use opaque `fileId`
+handles with the existing download tool and file resources; access is
+rechecked on retrieval. Remote deployments must enable course content.
+
+`upcoming_and_overdue` and `student_brief` reconcile assignment grading
+status with visible gradebook marks using course-module IDs. They label
+released gradebook marks separately from the assignment API status.
+Missing, hidden or unavailable marks leave grading unknown; separate
+practical totals are not treated as the assignment's own grade.
+
 ### Local (stdio): primary supported mode
 
 Runs on your own machine over stdio, using a Moodle token you generate

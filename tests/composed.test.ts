@@ -525,3 +525,28 @@ describe("upcomingAndOverdue", () => {
     });
   });
 });
+
+describe("gradebook reconciliation", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it.each([
+    { label: "released zero mark", grade: { itemmodule: "assign", cmid: 22, graderaw: 0, gradeformatted: "0.00/5" }, released: true },
+    { label: "released mark", grade: { itemmodule: "assign", cmid: 22, graderaw: 4.5, gradeformatted: "4.50/5" }, released: true },
+    { label: "hidden mark", grade: { itemmodule: "assign", cmid: 22, graderaw: 4.5, gradeishidden: true, gradeformatted: "PRIVATE" }, released: false },
+    { label: "date-hidden mark", grade: { itemmodule: "assign", cmid: 22, graderaw: 4.5, gradehiddenbydate: true, gradeformatted: "PRIVATE" }, released: false },
+    { label: "unmarked assignment", grade: { itemmodule: "assign", cmid: 22, graderaw: null, gradeformatted: "-" }, released: false },
+    { label: "separate practical total", grade: { itemmodule: null, cmid: null, graderaw: 9.5, gradeformatted: "9.50/10", itemname: "Practical 1 total" }, released: false },
+  ])("handles $label without confusing grade sources", async ({ grade, released }) => {
+    const moodle = await makeClient();
+    mockFetch.mockImplementation(routedFetchMock({
+      core_enrol_get_users_courses: [COURSE],
+      mod_assign_get_assignments: { courses: [{ id: COURSE.id, assignments: [{ id: 2, cmid: 22, name: "Practical 1", duedate: 1 }] }] },
+      mod_assign_get_submission_status: { lastattempt: { submission: { status: "submitted" }, gradingstatus: "notgraded" } },
+      gradereport_user_get_grade_items: { usergrades: [{ courseid: COURSE.id, gradeitems: [{ itemtype: "mod", ...grade }] }] },
+    }));
+    const text = await upcomingAndOverdue(moodle);
+    expect(text).toContain("assignment API: notgraded");
+    expect(text).toContain(released ? `grading: released (gradebook: ${grade.gradeformatted}` : "grading: unknown");
+    expect(text).not.toContain("PRIVATE");
+    expect(text).not.toContain("9.50/10");
+  });
+});

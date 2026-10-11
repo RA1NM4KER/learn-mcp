@@ -6,7 +6,7 @@ import { listForumsRaw, getDiscussionsRaw } from "./forums.js";
 import { getCourseNoticesRaw, hasConflictingNoticeDates } from "./courses.js";
 import { ASSIGNMENT_LIST_POLICY, COMPOSED_TASK_POLICY, TEXT_OUTPUT_POLICY, mapWithConcurrency } from "../policy.js";
 import { loadAssignments, loadEnrolledCourses, loadGrades, loadSubmissionStatus } from "../moodle-loaders.js";
-import type { MoodleAssignment, MoodleCourse } from "../moodle-api.js";
+import type { MoodleAssignment, MoodleCourse, MoodleGradeItem } from "../moodle-api.js";
 import { truncateText } from "../text.js";
 import { formatMoodleDateTime } from "../format-date.js";
 import { mapAccountWideSites, type ConnectedSite, type MultiSiteContext } from "../multi-site-context.js";
@@ -332,6 +332,17 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
     });
   }
 
+  // Fetch once per rendered course, with bounded fan-out. Failure means unknown,
+  // never evidence that the student's work is unmarked.
+  const gradeCourses = [...new Map(candidates.slice(0, COMPOSED_TASK_POLICY.maxRendered)
+    .map(c => [`${c.site.id}:${c.courseId}`, c])).values()];
+  const gradeReports = new Map<string, readonly MoodleGradeItem[]>(await mapWithConcurrency(gradeCourses, COMPOSED_TASK_POLICY.submissionStatusConcurrency, async c => {
+    try {
+      const report = c.client.supports("gradereport_user_get_grade_items") ? await loadGrades(c.client, c.courseId) : null;
+      return [`${c.site.id}:${c.courseId}`, report?.usergrades.find(u => u.courseid === c.courseId)?.gradeitems ?? []] as const;
+    } catch { return [`${c.site.id}:${c.courseId}`, []] as const; }
+  }));
+
   const tasks = await mapWithConcurrency(
     candidates.slice(0, COMPOSED_TASK_POLICY.maxRendered),
     COMPOSED_TASK_POLICY.submissionStatusConcurrency,
@@ -343,7 +354,7 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
         try {
           const status = await loadSubmissionStatus(siteClient, assignment.id);
           submissionStatus = status.lastattempt?.submission?.status ?? "not submitted";
-          gradingStatus = status.lastattempt?.gradingstatus ?? null;
+          gradingStatus = status.lastattempt?.gradingstatus ?? (status.lastattempt?.graded ? "graded" : null);
           const submittedAt = status.lastattempt?.submission?.timemodified;
           if (submissionStatus === "submitted" && assignment.duedate > 0 && submittedAt && submittedAt > assignment.duedate) {
             submittedLate = true;
@@ -352,6 +363,12 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
           // Leave status null if this particular lookup fails — don't fail the whole tool.
         }
       }
+
+      const grade = gradeReports.get(`${site.id}:${courseId}`)?.find(item => item.itemmodule === "assign" && item.cmid === assignment.cmid);
+      const released = grade && !grade.hidden && !grade.gradeishidden && !grade.gradehiddenbydate && grade.graderaw != null;
+      gradingStatus = released
+        ? `released (gradebook: ${truncateText(grade.gradeformatted, TEXT_OUTPUT_POLICY.maxLabelCharacters)}; assignment API: ${gradingStatus ?? "unknown"})`
+        : `${gradingStatus === "graded" ? "graded (assignment API; release unknown)" : "unknown"} (assignment API: ${gradingStatus ?? "unavailable"}; no visible matched gradebook mark)`;
 
       const [courseIdLabel, assignmentIdLabel] = multiSite
         ? await Promise.all([multiSite.seal("course", site.id, courseId), multiSite.seal("assignment", site.id, assignment.id)])

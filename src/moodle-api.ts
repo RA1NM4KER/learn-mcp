@@ -117,6 +117,11 @@ export const MoodleGradeItemSchema = MoodleObject.extend({
   // Course and category grade items have no backing activity module, and
   // Moodle's core grade report serializes that absence as null.
   itemmodule: z.string().nullable().optional(),
+  cmid: z.number().nullable().optional(),
+  graderaw: z.number().nullable().optional(),
+  gradeishidden: z.boolean().optional(),
+  gradehiddenbydate: z.boolean().optional(),
+  hidden: z.union([z.boolean(), z.number()]).optional(),
   grademax: z.number().optional().default(0),
   gradeformatted: z.string().optional().default(""),
   percentageformatted: z.string().nullable().optional(),
@@ -254,3 +259,11 @@ export const MoodleUserByIdNumberSchema = z.array(MoodleObject.extend({
   fullname: z.string().optional().default(""),
   idnumber: z.string().nullable().optional(),
 }));
+
+export const MoodlePagesResponseSchema = MoodleObject.extend({
+  pages: z.array(MoodleObject.extend({
+    id: z.number(), course: z.number(), coursemodule: z.number(), name: z.string(),
+    content: z.string(),
+    contentfiles: z.array(MoodleObject.extend({ filename: z.string(), fileurl: z.string(), filesize: z.number(), mimetype: z.string().optional() })).optional().default([]),
+  })),
+});
