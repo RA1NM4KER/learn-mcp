@@ -21,7 +21,7 @@ function renderNotification(n: MoodleNotification, siteLabel: string): string[] 
 }
 
 /** Single-site rendering — unchanged output shape for the common (one connected SUNLearn site) case. */
-export async function getNotifications(client: MoodleClient, limit = 20): Promise<string> {
+export async function getNotifications(client: MoodleClient, limit = 20, since?: number): Promise<string> {
   if (!client.supports("message_popup_get_popup_notifications")) {
     return "Notifications API is not enabled on your Moodle.";
   }
@@ -30,7 +30,11 @@ export async function getNotifications(client: MoodleClient, limit = 20): Promis
   if (data.notifications.length === 0) return "No notifications found.";
 
   const lines: string[] = [`## Notifications (${data.unreadcount} unread)\n`];
-  for (const n of data.notifications) lines.push(...renderNotification(n, ""));
+  const recent = data.notifications.filter(n => since === undefined || (n.timecreated >= since && n.timecreated <= Date.now() / 1000));
+  for (const n of recent.slice(0, limit)) lines.push(...renderNotification(n, ""));
+  const omitted = data.notifications.length - Math.min(recent.length, limit);
+  if (omitted) lines.push(`_${omitted} fetched notifications outside the requested window or limit were omitted._`);
+  if (recent.length === 0) lines.push("No recent notifications in the fetched window. Older notices remain available via moodle_get_notifications.");
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
@@ -46,8 +50,9 @@ export async function getNotificationsAccountWide(
   client: MoodleClient,
   multiSite: MultiSiteContext,
   limit = 20,
+  since?: number,
 ): Promise<string> {
-  if (multiSite.additionalSites.length === 0) return getNotifications(client, limit);
+  if (multiSite.additionalSites.length === 0) return getNotifications(client, limit, since);
 
   const { results, unavailable } = await mapAccountWideSites(client, multiSite, async (_site, siteClient) => {
     if (!siteClient.supports("message_popup_get_popup_notifications")) return null;
@@ -62,9 +67,11 @@ export async function getNotificationsAccountWide(
     for (const n of value.notifications) merged.push({ site, isAnchor, n });
   }
   merged.sort((a, b) => b.n.timecreated - a.n.timecreated);
-  const capped = merged.slice(0, limit);
+  const recent = merged.filter(({ n }) => since === undefined || (n.timecreated >= since && n.timecreated <= Date.now() / 1000));
+  const capped = recent.slice(0, limit);
 
   const notes = unavailable.length > 0 ? [`_Temporarily unavailable: ${unavailable.map((n) => truncateText(n, TEXT_OUTPUT_POLICY.maxLabelCharacters)).join(", ")}._`, ""] : [];
+  if (merged.length > capped.length) notes.push(`_${merged.length - capped.length} fetched notifications outside the requested window or limit were omitted._`, "");
   if (capped.length === 0) {
     return notes.length ? `No notifications found.\n\n${notes.join("\n")}` : "No notifications found.";
   }

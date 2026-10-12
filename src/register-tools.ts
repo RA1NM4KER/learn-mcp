@@ -43,5 +43,5 @@ export function registerAllTools(
   registerForumTools(server, courseRefResolver);
   registerNotificationTools(server, client, multiSite);
   registerSiteInfoTool(server, client);
-  registerComposedTools(server, client, courseRefResolver, multiSite);
+  registerComposedTools(server, client, courseRefResolver, multiSite, contentEnabled);
 }

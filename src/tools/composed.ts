@@ -1,17 +1,19 @@
+import { z } from "zod";
+import { checkDocumentDeadline } from "./deadline-check.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
 import type { CourseRefResolver } from "../course-ref-resolver.js";
 import { RefSchema, withResolvedCourseListing, type SubRefSealer } from "./tool-ref-helpers.js";
 import { listForumsRaw, getDiscussionsRaw } from "./forums.js";
 import { getCourseNoticesRaw, hasConflictingNoticeDates } from "./courses.js";
-import { ASSIGNMENT_LIST_POLICY, COMPOSED_TASK_POLICY, TEXT_OUTPUT_POLICY, mapWithConcurrency } from "../policy.js";
+import { ASSIGNMENT_LIST_POLICY, STUDENT_BRIEF_POLICY, COMPOSED_TASK_POLICY, TEXT_OUTPUT_POLICY, mapWithConcurrency } from "../policy.js";
 import { loadAssignments, loadEnrolledCourses, loadGrades, loadSubmissionStatus } from "../moodle-loaders.js";
 import type { MoodleAssignment, MoodleCourse, MoodleGradeItem } from "../moodle-api.js";
 import { truncateText } from "../text.js";
 import { formatMoodleDateTime } from "../format-date.js";
 import { mapAccountWideSites, type ConnectedSite, type MultiSiteContext } from "../multi-site-context.js";
 import { getNotifications, getNotificationsAccountWide } from "./notifications.js";
-import { getCalendarEventsAccountWide } from "./calendar.js";
+import { getCalendarEvents, getCalendarEventsAccountWide } from "./calendar.js";
 import { readOnlyTool } from "./read-only-tool.js";
 
 // Composed, read-only tools that merge a few raw Moodle calls into one
@@ -267,9 +269,12 @@ const TIMING_BUCKET_ORDER: Record<TimingBucket, number> = {
   overdue: 0, due_soon: 1, upcoming: 2, closed: 3,
 };
 
-export async function upcomingAndOverdue(client: MoodleClient, multiSite?: MultiSiteContext): Promise<string> {
+export interface BriefCourse { baseUrl: string; id: number }
+
+export async function upcomingAndOverdue(client: MoodleClient, multiSite?: MultiSiteContext, selectedCourses?: readonly BriefCourse[]): Promise<string> {
   const { results, unavailable } = await mapAccountWideSites(client, multiSite, async (_site, siteClient) => {
-    const courses = await loadEnrolledCourses(siteClient);
+    const enrolled = await loadEnrolledCourses(siteClient);
+    const courses = selectedCourses ? enrolled.filter(c => selectedCourses.some(selected => selected.baseUrl === siteClient.baseUrl && selected.id === c.id)) : enrolled;
     if (!siteClient.supports("mod_assign_get_assignments")) return { client: siteClient, courses, assignments: null };
     if (courses.length === 0) return { client: siteClient, courses, assignments: null };
     const courseIdParams = Object.fromEntries(courses.map((c, i) => [`courseids[${i}]`, c.id]));
@@ -281,7 +286,7 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
   if (totalCourses === 0) {
     return unavailable.length > 0
       ? `Enrollment could not be fully determined.\n\n_Temporarily unavailable: ${unavailable.join(", ")}._`
-      : "You are not enrolled in any courses.";
+      : selectedCourses ? "No selected courses were found among your current enrollments." : "You are not enrolled in any courses.";
   }
 
   const missingAssignmentApis = results.filter(r => r.value.courses.length > 0 && !r.value.assignments).map(r => r.site.name);
@@ -454,11 +459,13 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
 /** Compact, student-intent entrypoint. It deliberately composes authoritative
  * deadline state and recent notifications instead of asking an agent to infer
  * urgency from raw Moodle entities. */
-export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteContext): Promise<string> {
+export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteContext, selectedCourses?: readonly (BriefCourse & { client: MoodleClient })[]): Promise<string> {
   const sections = await Promise.allSettled([
-    upcomingAndOverdue(client, multiSite),
-    multiSite ? getNotificationsAccountWide(client, multiSite, 10) : getNotifications(client, 10),
-    getCalendarEventsAccountWide(client, multiSite, 14),
+    upcomingAndOverdue(client, multiSite, selectedCourses),
+    multiSite ? getNotificationsAccountWide(client, multiSite, STUDENT_BRIEF_POLICY.notificationLimit, Math.floor(Date.now() / 1000) - STUDENT_BRIEF_POLICY.recentNotificationDays * 86400)
+      : getNotifications(client, STUDENT_BRIEF_POLICY.notificationLimit, Math.floor(Date.now() / 1000) - STUDENT_BRIEF_POLICY.recentNotificationDays * 86400),
+    selectedCourses ? mapWithConcurrency(selectedCourses, COMPOSED_TASK_POLICY.submissionStatusConcurrency, course => getCalendarEvents(course.client, course.id, 14)).then(parts => parts.join("\n"))
+      : getCalendarEventsAccountWide(client, multiSite, 14),
   ]);
   const deadlines = sections[0]!.status === "fulfilled" ? sections[0]!.value : "Deadlines unavailable; completeness cannot be confirmed.";
   const notifications = sections[1]!.status === "fulfilled" ? sections[1]!.value : "Notifications unavailable; please retry.";
@@ -498,17 +505,18 @@ export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteCo
     else if (/\b(grade released|graded|due|deadline|assignment|schedule|venue|lecture)\b/.test(normalized)) ranked.important.push(block);
     else ranked.routine.push(block);
   }
+  const notificationCoverage = notifications.split("\n").filter(line => line.startsWith("_")).join("\n");
   const notificationSection = notificationBlocks.length === 0
     ? notifications
     : [
-      ranked.urgent.length ? `### Urgent\n${ranked.urgent.join("\n\n")}` : "",
+      ranked.urgent.length ? `### Recent changes and reminders\n${ranked.urgent.join("\n\n")}` : "",
       ranked.important.length ? `### Important\n${ranked.important.join("\n\n")}` : "",
       ranked.routine.length ? `### Routine\n${ranked.routine.join("\n\n")}` : "",
-    ].filter(Boolean).join("\n\n");
-  return truncateText(`## Student Brief\n\n### Deadlines\n${actionableDeadlines}${calendarSection}\n\n### Notifications\n${notificationSection}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
+    ].filter(Boolean).join("\n\n") + (notificationCoverage ? `\n\n${notificationCoverage}` : "");
+  return truncateText(`## Student Brief\n\n### Deadlines\n${actionableDeadlines}${calendarSection}\n\n### Notifications (last ${STUDENT_BRIEF_POLICY.recentNotificationDays} days; account-wide)\n${notificationSection}\n\n_Notification wording is not confirmation that the event is still upcoming. Older notifications: moodle_get_notifications. PDF deadlines are not checked unless deadlineDocuments are supplied._`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
-export function registerComposedTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver, multiSite?: MultiSiteContext): void {
+export function registerComposedTools(server: McpServer, client: MoodleClient, courseRefResolver: CourseRefResolver, multiSite?: MultiSiteContext, contentEnabled = true): void {
   readOnlyTool(server,
     "course_overview",
     "One-call summary of a course for the student: identity, upcoming deadlines, course grade total, and recent announcements. Use this instead of chaining moodle_get_course + moodle_list_assignments + moodle_get_grades + moodle_get_forum_discussions when the student just wants 'catch me up on this course'.",
@@ -527,8 +535,27 @@ export function registerComposedTools(server: McpServer, client: MoodleClient, c
 
   readOnlyTool(server,
     "student_brief",
-    "Compact cross-course catch-up: authoritative deadline state plus recent notifications. Use for 'what should I know?', 'catch me up', or 'what needs my attention?'.",
-    {},
-    async () => ({ content: [{ type: "text" as const, text: await studentBrief(client, multiSite) }] }),
+    "Compact catch-up: assignment deadlines plus notifications from the last seven days. Optional courseIds narrow deadlines/calendar; notifications remain account-wide. Optional deadlineDocuments compare explicitly selected PDFs with assignments and prominently report conflicting dates (bounded text check, not full visual verification). Use for 'what should I know?', 'catch me up', or 'what needs my attention?'.",
+    {
+      courseIds: z.array(RefSchema).min(1).max(STUDENT_BRIEF_POLICY.maxCourses).optional().describe("Only these enrolled courses for deadlines/calendar; use exact references from moodle_list_courses"),
+      deadlineDocuments: z.array(z.object({ assignmentId: RefSchema, fileId: z.string().min(1) })).min(1).max(STUDENT_BRIEF_POLICY.maxDeadlineDocuments).optional().describe("Explicit PDF/assignment pairs to check for deadline conflicts; obtain IDs from listing tools"),
+    },
+    async ({ courseIds, deadlineDocuments }) => {
+      const selected: (BriefCourse & { client: MoodleClient })[] = [];
+      for (const courseRef of courseIds ?? []) {
+        const resolved = await courseRefResolver.resolve("course", courseRef);
+        if (!resolved.ok) return { isError: true, content: [{ type: "text" as const, text: resolved.message }] };
+        if (!selected.some(course => course.baseUrl === resolved.client.baseUrl && course.id === resolved.id)) selected.push({ baseUrl: resolved.client.baseUrl, id: resolved.id, client: resolved.client });
+      }
+      const checks: string[] = [];
+      for (const doc of deadlineDocuments ?? []) {
+        if (!contentEnabled) { checks.push("Document deadline checks unavailable: file-content retrieval is disabled."); break; }
+        const resolved = await courseRefResolver.resolve("assignment", doc.assignmentId);
+        checks.push(resolved.ok ? await checkDocumentDeadline(client, multiSite, resolved.client, resolved.id, doc.fileId) : resolved.message);
+      }
+      const brief = await studentBrief(client, multiSite, courseIds ? selected : undefined);
+      const warning = checks.length ? `## Document deadline checks\n${checks.join("\n\n")}\n\n` : "";
+      return { content: [{ type: "text" as const, text: truncateText(warning + brief, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters) }] };
+    },
   );
 }

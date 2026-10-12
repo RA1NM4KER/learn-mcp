@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
 import type { CourseRefResolver } from "../course-ref-resolver.js";
@@ -135,15 +136,15 @@ export async function getCourse(client: MoodleClient, courseId: number): Promise
 }
 
 /** Current section summaries are lecturer-maintained notices, not attachment metadata. */
-export async function getCourseNoticesRaw(client: MoodleClient, courseId: number): Promise<CourseNotice[]> {
+export async function getCourseNoticesRaw(client: MoodleClient, courseId: number, fullText = false): Promise<CourseNotice[]> {
   const sections = await loadCourseContents(client, courseId);
   const notices = sections.flatMap((section) => {
-    const text = sanitizeAndTruncateHtml(section.summary ?? "", TEXT_OUTPUT_POLICY.maxCourseSummaryCharacters);
+    const text = sanitizeAndTruncateHtml(section.summary ?? "", fullText ? COURSE_NOTICE_POLICY.maxFullCharacters : TEXT_OUTPUT_POLICY.maxCourseSummaryCharacters);
     if (!text || !NOTICE_TERMS.test(text)) return [];
     const activity = NOTICE_ACTIVITY.exec(text)?.[0]?.toLowerCase();
     return [{
       sectionName: truncateText(section.name || "General", TEXT_OUTPUT_POLICY.maxLabelCharacters),
-      text: noticeExcerpt(text),
+      text: fullText ? text : noticeExcerpt(text),
       classification: classifyNotice(text),
       ...(activity ? { activity } : {}),
     }];
@@ -163,8 +164,8 @@ export async function getCourseNoticesRaw(client: MoodleClient, courseId: number
   return notices.sort((a, b) => rank[a.classification] - rank[b.classification]).slice(0, COURSE_NOTICE_POLICY.maxRendered);
 }
 
-export async function getCourseNotices(client: MoodleClient, courseId: number): Promise<string> {
-  const notices = await getCourseNoticesRaw(client, courseId);
+export async function getCourseNotices(client: MoodleClient, courseId: number, fullText = false): Promise<string> {
+  const notices = await getCourseNoticesRaw(client, courseId, fullText);
   if (notices.length === 0) return "No current deadline or practical notices were found in course-section summaries.";
   const lines = [`## Current Course Notices: Course ${courseId}`, ""];
   const current = notices.filter((notice) => notice.classification === "current");
@@ -179,6 +180,7 @@ export async function getCourseNotices(client: MoodleClient, courseId: number): 
     lines.push(`### ${label}`);
     for (const notice of group) lines.push(`#### ${notice.sectionName}`, notice.text, "");
   }
+  if (!fullText) lines.push("_These are excerpts. Call moodle_get_course_notices with fullText: true to read the full notices (bounded for safety)._");
   lines.push("_These are current course-section notices. If an attachment or forum post has a conflicting date, verify with the lecturer._");
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
@@ -206,7 +208,7 @@ export function registerCourseTools(
   readOnlyTool(server,
     "moodle_get_course_notices",
     "Read current course-section notices relevant to deadlines, submissions, practicals, demonstrations, and tests. Use this to verify a deadline when a PDF, forum post, or calendar entry conflicts with the current course page.",
-    { courseId: RefSchema.describe("Course ID from moodle_list_courses") },
-    async ({ courseId }) => withResolvedRef(courseRefResolver, "course", courseId, getCourseNotices),
+    { courseId: RefSchema.describe("Course ID from moodle_list_courses"), fullText: z.boolean().optional().describe("Read full notice text instead of short excerpts; safety caps still apply") },
+    async ({ courseId, fullText }) => withResolvedRef(courseRefResolver, "course", courseId, (owner, id) => getCourseNotices(owner, id, fullText)),
   );
 }

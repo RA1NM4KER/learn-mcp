@@ -123,3 +123,25 @@ Previous issues: #3 page media and #5 PDF regression suites pass; #4 grade-sourc
 The first audit deployment (`f617e24`) broke remote calls: course listing, student brief and page retrieval all reproduced connector internal errors, with matching Worker HTTP 502 responses. The audit's `redirect: "error"` protection was valid in Node but unsupported in Workers. A real local workerd probe against the public Moodle origin returned 200 with `manual`, while `error` threw “Invalid redirect value”. This is a confirmed server/runtime regression introduced by the audit, not a ChatGPT session problem.
 
 Correction: use Workers-supported `manual`; existing non-success response checks refuse redirects without sending credentials to their destinations. Regression asserts supported mode and refusal of a 307 response with no second request. The initial build, Node tests and bundle dry-run did not detect this runtime incompatibility. Worker-runtime and live connected smoke checks are necessary before declaring the remote deployment healthy.
+
+
+## Student experience follow-up
+
+After the redirect fix, the user reported a successful fresh ChatGPT test of
+seven operations, including both timetable images and the Practical 3 PDF.
+Follow-up work adds optional selected-course briefs, a seven-day notification
+window, bounded full notice text, and explicit PDF/assignment deadline checks.
+Live SDK stdio verification with the real SS244/AM364 courses returned a focused
+brief without Biochemistry or September announcements, prominently flagged the
+Practical 3 PDF/assignment date conflict, and retrieved 13,248 characters of full
+SS244 notices. PDF checks require caller-selected document pairs and cover only
+two text pages and supported full English dates; they do not infer universal
+agreement. Regression fixtures cover recency, omission notes, selected overdue
+work, full-text recovery, date agreement/conflict, session-date exclusion and
+mismatched assignment/file authorization.
+
+The same focused brief, real PDF conflict and full-notice retrieval were also
+verified in a local workerd runtime with production compatibility flags: HTTP
+200, conflict detected, focused course output and 13,248 notice characters.
+This runtime check complements Node tests and the bundle dry-run; it does not
+substitute for a fresh ChatGPT tool-schema refresh.

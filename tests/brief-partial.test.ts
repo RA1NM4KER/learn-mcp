@@ -12,7 +12,7 @@ it("keeps available sections and reads single-site notifications when calendar f
   const client = await MoodleClient.create({ baseUrl: "https://moodle.test", auth: { kind: "token", token: "fixture" } });
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("[]")));
   const result = await studentBrief(client);
-  expect(notificationRead).toHaveBeenCalledWith(client, 10);
+  expect(notificationRead).toHaveBeenCalledWith(client, 10, expect.any(Number));
   expect(result).toContain("Lecture notice");
   expect(result).toContain("Calendar unavailable");
   expect(result).not.toContain("private upstream");

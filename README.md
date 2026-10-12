@@ -310,3 +310,28 @@ raw file URLs, or filesystem paths.
 npm test
 npm run build
 ```
+
+
+### Focused briefs and full notices
+
+`student_brief` accepts optional `courseIds` (exact references from
+`moodle_list_courses`) to restrict deadlines and calendar entries. Selected
+courses' overdue work remains visible. Notifications are explicitly account-wide
+and limited to the last seven days; `moodle_get_notifications` still exposes
+older notices. Recent cancellation/reminder wording is not proof that an event
+is still upcoming.
+
+Use `moodle_get_course_notices` with `fullText: true` to read complete notice
+text rather than short excerpts. Per-notice and response safety caps still
+apply; excerpts include the retrieval hint.
+
+For a brief that checks a PDF against a Moodle assignment, pass
+`deadlineDocuments: [{ assignmentId, fileId }]` with references from the listing
+tools. The server reauthorizes both within the same course/site, reads up to the
+first two PDF pages, and places conflicting dates above the brief. Up to three
+explicitly selected documents can be checked. This checks English deadline/due
+phrases with a full date and year; it does not scan all course files, perform OCR,
+verify submission times or interpret diagrams. Missing/unsupported dates are
+reported as unverified, not agreement. File-content-disabled deployments refuse
+these checks. The assistant must discover and supply the relevant document pair;
+a default brief cannot know a deadline printed only in an unread PDF.
