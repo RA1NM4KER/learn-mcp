@@ -1,6 +1,8 @@
 # Issue #8: MCP client and transport compatibility
 
-12 October 2026. Tested production code at `fac90cf` plus the local, uncommitted compatibility harness. No production application source changed. This report distinguishes automated protocol evidence from model/client observations. It is not universal MCP compatibility certification.
+12 October 2026. **Latest update: the Codex connector schema gap is resolved and the newly exposed features passed live calls after refresh; see the final section.**
+
+Tested production code at `fac90cf` plus the local, uncommitted compatibility harness. No production application source changed. This report distinguishes automated protocol evidence from model/client observations. It is not universal MCP compatibility certification.
 
 ## Supported/tested matrix
 
@@ -97,3 +99,11 @@ Classification: server/protocol parity PASS; media content delivery PASS for tes
 After the initial report, the user supplied a fresh ChatGPT compatibility review. It reports two successful authenticated calls (`moodle_list_courses`, `student_brief`) and the same advertised schema omissions observed directly in Codex: missing `moodle_read_file`, missing brief course/document parameters, missing notices `fullText`, and an outdated download description. These are user-supplied client observations; they do not add independently executed checks to the automated counts or establish fresh ChatGPT image/PDF coverage.
 
 This narrows the remaining issue to schema synchronization across the managed connections. Normal student access works in the reported ChatGPT session. Server API changes are not justified by the schema mismatch alone. Next steps: ship the harness/report when explicitly authorized, verify the new CI step, then refresh/reimport the plugin schema through the normal client/plugin management flow and compare tool count, parameters and descriptions. A refresh/reconnect has not yet been performed or verified. If the mismatch persists, investigate plugin-import/release/cache behavior. Do not close #8 based solely on the passing calls.
+
+## Verified post-refresh result
+
+After the user refreshed tools, Codex independently observed all **22 remote tools**, including `moodle_read_file`. The advertised schemas now expose `student_brief.courseIds`, `student_brief.deadlineDocuments`, and notices `fullText`. The download description now advertises native images and PDF text correctly. This supersedes the earlier Codex metadata limitation; historical findings above describe the pre-refresh state. A fresh post-refresh ChatGPT-side schema comparison remains user-verifiable, rather than inferred from this Codex result.
+
+Six fresh authenticated operations passed: course discovery, practical resource discovery, assignment listing, full-text notices, PDF page-range reading, and a focused brief with a supplied deadline document. Full-text notices returned 13,248 characters. Reading page 2 alone returned both demo tasks and retained the diagram warning. The brief limited coursework/calendar to the selected SS244 course, kept notifications explicitly account-wide, and prominently flagged PDF 22 October versus assignment 23 October without selecting a date automatically.
+
+Compatibility commit `8c11460` was pushed. CI run 38254383013 passed all checks and Worker deployment on attempt 2; attempt 1 passed checks but deployment failed on a Cloudflare API 504. The retry succeeded. Post-deployment course discovery and student brief also passed. No server API changes were needed to resolve the metadata gap.
