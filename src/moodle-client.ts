@@ -2,7 +2,7 @@ import type { Config } from "./config.js";
 import { DEFAULT_MAX_FILE_MB, DEFAULT_REQUEST_TIMEOUT_MS } from "./config.js";
 import { FILE_TRANSFER_POLICY } from "./policy.js";
 import { FileIdStore, type FileRef } from "./file-id-store.js";
-import { isMoodleFileContent, MoodlePagesResponseSchema, MoodleCourseSchema, MoodleAssignSubmissionStatusSchema, MoodleAssignSubmissionsResponseSchema, MoodleCourseContentsSchema, MoodleErrorResponseSchema, MoodleLoginResponseSchema, MoodleSiteInfoSchema } from "./moodle-api.js";
+import { isMoodleFileContent, MoodleAssignmentsResponseSchema, MoodlePagesResponseSchema, MoodleCourseSchema, MoodleAssignSubmissionStatusSchema, MoodleAssignSubmissionsResponseSchema, MoodleCourseContentsSchema, MoodleErrorResponseSchema, MoodleLoginResponseSchema, MoodleSiteInfoSchema } from "./moodle-api.js";
 import type { z } from "zod";
 
 export interface DownloadedFile {
@@ -273,6 +273,14 @@ export class MoodleClient {
       return null;
     }
     try {
+      if (ref.assignmentIntroId !== undefined) {
+        if (ref.assignmentId !== undefined || ref.pageModuleId !== undefined || ref.submitterId !== undefined) return null;
+        const courses = await this.call("core_enrol_get_users_courses", { userid: this.userId }, MoodleCourseSchema.array());
+        if (!courses.some(course => course.id === ref.courseId)) return null;
+        const data = await this.call("mod_assign_get_assignments", { "courseids[0]": ref.courseId }, MoodleAssignmentsResponseSchema);
+        const assignment = data.courses.find(course => course.id === ref.courseId)?.assignments.find(item => item.id === ref.assignmentIntroId);
+        return assignment && [...assignment.introfiles, ...assignment.introattachments].some(file => file.fileurl === ref.fileurl) ? ref : null;
+      }
       if (ref.assignmentId !== undefined) {
         // Submission attachments are authorised by the assignment's current
         // submissions. A failed call (no grading access, submission removed)

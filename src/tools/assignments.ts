@@ -2,9 +2,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
 import type { CourseRefResolver } from "../course-ref-resolver.js";
 import { RefSchema, withResolvedCourseListing, withResolvedRef, type SubRefSealer } from "./tool-ref-helpers.js";
-import { loadAssignments, loadCourseContents, loadSubmissionStatus } from "../moodle-loaders.js";
-import { ASSIGNMENT_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
-import { truncateText } from "../text.js";
+import { loadAssignments, loadCourseContents, loadEnrolledCourses, loadSubmissionStatus } from "../moodle-loaders.js";
+import { ASSIGNMENT_DETAIL_POLICY, ASSIGNMENT_LIST_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
+import { stripHtml, truncateText } from "../text.js";
 import { formatMoodleDateTime } from "../format-date.js";
 import { readOnlyTool } from "./read-only-tool.js";
 
@@ -65,14 +65,38 @@ export async function listAssignments(client: MoodleClient, courseId: number, se
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
-export async function getAssignment(client: MoodleClient, assignmentId: number): Promise<string> {
+export async function getAssignment(client: MoodleClient, assignmentId: number, contentEnabled = true): Promise<string> {
+  const lines: string[] = [`## Assignment ${assignmentId}\n`];
+  if (contentEnabled && client.supports("mod_assign_get_assignments")) {
+    const data = await loadAssignments(client, {});
+    const course = data.courses.find(item => item.assignments.some(assignment => assignment.id === assignmentId));
+    const assignment = course?.assignments.find(item => item.id === assignmentId);
+    if (!course || !assignment) return "This assignment is unavailable or you do not have permission to read it.";
+    if (!(await loadEnrolledCourses(client)).some(item => item.id === course.id)) return "This course is not among your enrolled courses.";
+    lines.push(`**Name:** ${truncateText(stripHtml(assignment.name), TEXT_OUTPUT_POLICY.maxLabelCharacters)}`, `**Due:** ${formatDate(assignment.duedate)}`, "### Instructions", truncateText(stripHtml(assignment.intro), ASSIGNMENT_DETAIL_POLICY.maxInstructionCharacters) || "No inline instructions provided.", "### Instructor attachments");
+    const files = [...new Map([...assignment.introfiles, ...assignment.introattachments].map(file => [file.fileurl, file])).values()];
+    for (const file of files.slice(0, ASSIGNMENT_DETAIL_POLICY.maxAttachments)) {
+      let safe = false;
+      try {
+        const url = new URL(file.fileurl);
+        safe = url.origin === new URL(client.baseUrl).origin && /\/pluginfile\.php(?:\/|$)/i.test(url.pathname) && !url.username && !url.password;
+      } catch { /* Never advertise unsafe upstream file destinations. */ }
+      if (!safe) { lines.push("- Attachment unavailable (unsafe file link)."); continue; }
+      const fileId = await client.fileIdStore.seal({ userId: client.userId, courseId: course.id, assignmentIntroId: assignment.id, fileurl: file.fileurl, filename: file.filename, filesize: file.filesize, mime: file.mimetype ?? "application/octet-stream" });
+      lines.push(`- ${truncateText(stripHtml(file.filename), TEXT_OUTPUT_POLICY.maxLabelCharacters)} (${file.mimetype ?? "application/octet-stream"}), fileId: \`${fileId}\`, resource: \`moodle://files/${fileId}\``);
+    }
+    if (!files.length) lines.push("No instructor attachments provided.");
+    if (files.length > ASSIGNMENT_DETAIL_POLICY.maxAttachments) lines.push(`_${files.length - ASSIGNMENT_DETAIL_POLICY.maxAttachments} attachments omitted._`);
+    lines.push("_Use moodle_read_file or moodle_download_file with these handles. Access is checked again when retrieved._");
+  }
   if (!client.supports("mod_assign_get_submission_status")) {
-    return "Assignment submission status API is not enabled on your Moodle.";
+    lines.push("Assignment submission status API is not enabled on your Moodle.");
+    return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
   }
 
   const status = await loadSubmissionStatus(client, assignmentId);
 
-  const lines: string[] = [`## Assignment ${assignmentId}: Submission Status\n`];
+  lines.push("### Submission Status");
 
   const submission = status.lastattempt?.submission;
   if (submission) {
@@ -94,10 +118,10 @@ export async function getAssignment(client: MoodleClient, assignmentId: number):
     lines.push(`\n**Grade:** ${truncateText(status.feedback.gradefordisplay ?? "N/A", TEXT_OUTPUT_POLICY.maxLabelCharacters)}`);
   }
 
-  return lines.join("\n");
+  return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 
-export function registerAssignmentTools(server: McpServer, courseRefResolver: CourseRefResolver): void {
+export function registerAssignmentTools(server: McpServer, courseRefResolver: CourseRefResolver, contentEnabled = true): void {
   readOnlyTool(server,
     "moodle_list_assignments",
     "List all assignments the student has in a course, with due dates and max grades. Use this to answer 'what assignments do I have' or 'when is X due'. Returns assignment IDs for use with moodle_get_assignment.",
@@ -107,8 +131,8 @@ export function registerAssignmentTools(server: McpServer, courseRefResolver: Co
 
   readOnlyTool(server,
     "moodle_get_assignment",
-    "Check the student's own submission status and grade feedback for one assignment: 'have I submitted this', 'was it graded', 'what feedback did I get'.",
+    "Read assignment instructions and instructor attachments as safe file handles, plus the student's own submission status and grade feedback: 'have I submitted this', 'was it graded', 'what feedback did I get'.",
     { assignmentId: RefSchema.describe("Assignment ID from moodle_list_assignments") },
-    async ({ assignmentId }) => withResolvedRef(courseRefResolver, "assignment", assignmentId, getAssignment),
+    async ({ assignmentId }) => withResolvedRef(courseRefResolver, "assignment", assignmentId, (client, id) => getAssignment(client, id, contentEnabled)),
   );
 }

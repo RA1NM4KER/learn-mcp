@@ -81,6 +81,12 @@ export const MoodleCourseSectionSchema = MoodleObject.extend({
 export const MoodleCourseContentsSchema = z.array(MoodleCourseSectionSchema);
 export type MoodleCourseSection = z.infer<typeof MoodleCourseSectionSchema>;
 
+export const MoodleAssignmentAttachmentSchema = MoodleObject.extend({
+  filename: z.string(), fileurl: z.string(),
+  filesize: z.number().finite().nonnegative().optional().default(0),
+  mimetype: z.string().optional(),
+});
+
 export const MoodleAssignmentSchema = MoodleObject.extend({
   id: z.number(),
   // mod_assign_get_assignments names the course-module id "cmid" — unlike
@@ -91,6 +97,9 @@ export const MoodleAssignmentSchema = MoodleObject.extend({
   name: z.string(),
   duedate: z.number().optional().default(0),
   cutoffdate: z.number().optional().default(0),
+  intro: z.string().optional().default(""),
+  introfiles: z.array(MoodleAssignmentAttachmentSchema).optional().default([]),
+  introattachments: z.array(MoodleAssignmentAttachmentSchema).optional().default([]),
   grade: z.number().optional().default(0),
   // 1 when submissions are made by a group rather than by individual students.
   teamsubmission: z.number().optional().default(0),

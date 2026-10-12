@@ -100,3 +100,5 @@ export const PDF_READ_POLICY = {
   extractionTimeoutMs: 15_000,
   maxImagePixels: 16_777_216,
 } as const;
+
+export const ASSIGNMENT_DETAIL_POLICY = { maxAttachments: 30, maxInstructionCharacters: 30000 } as const;

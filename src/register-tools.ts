@@ -35,7 +35,7 @@ export function registerAllTools(
   registerDownloadTool(server, client, contentEnabled, multiSite, downloadDir !== undefined, fileLinkFor);
   registerReadFileTool(server, client, contentEnabled, multiSite);
   if (contentEnabled && downloadDir !== undefined) registerSaveTool(server, client, downloadDir, multiSite);
-  registerAssignmentTools(server, courseRefResolver);
+  registerAssignmentTools(server, courseRefResolver, contentEnabled);
   registerSubmissionTools(server, courseRefResolver, contentEnabled);
   registerGradeTools(server, courseRefResolver);
   registerCalendarTools(server, client, courseRefResolver, multiSite);
