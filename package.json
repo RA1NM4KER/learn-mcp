@@ -20,6 +20,7 @@
     "deploy": "wrangler deploy",
     "test": "vitest run",
     "test:security": "tsc -p tests/security/tsconfig.json && node tests/security/run.mjs",
+    "test:compatibility": "npm run build && tsc -p tests/security/tsconfig.json && node tests/security/run.mjs --compatibility",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build && npm test"
   },

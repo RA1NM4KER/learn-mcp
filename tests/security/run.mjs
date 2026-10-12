@@ -141,6 +141,10 @@ try {
   await fixture('unlink', { user: 'bob' }); r = await call(bob.access_token, 'moodle_list_courses'); assert.equal(r.status, 403); assert.equal(r.data.code, 'account_link_required'); pass('unlinked OAuth user never falls back to legacy/env credential');
   const reconnect = await login('bob'); r = await call(reconnect.access_token, 'moodle_list_courses'); assert.ok(textOf(r).includes('Bob course')); pass('reconnect restores same isolated identity'); r = await rpc(bob.access_token, 'tools/list'); assert.equal(r.status, 401); pass('reconnect revokes superseded grant');
   await fixture('revoke'); r = await rpc(alice.access_token, 'tools/list'); assert.equal(r.status, 401); r = await post('/oauth/token', { grant_type: 'refresh_token', client_id: clientId, refresh_token: refreshed.data.refresh_token }); assert.equal(r.status, 400); pass('real provider grant revocation rejects access and refresh tokens');
+  if (process.argv.includes('--compatibility')) {
+    const { runSdkCompatibility } = await import('../compatibility/sdk.mjs');
+    await runSdkCompatibility({ origin, token: ta.access_token });
+  }
   await fixture('expire'); r = await rpc(reconnect.access_token, 'tools/list'); assert.equal(r.status, 401); pass('expired stored access token rejected by real provider');
   const outbound = await fixture('requests'); assert.ok(outbound.every(r => ['stemlearn.sun.ac.za', 'emslearn.sun.ac.za'].includes(r.host))); assert.ok(outbound.every(r => r.fn === 'file' || ['core_webservice_get_site_info', 'core_enrol_get_users_courses', 'core_course_get_contents', 'mod_assign_get_assignments', 'mod_assign_get_submission_status', 'mod_assign_get_submissions', 'mod_assign_list_participants', 'core_group_get_activity_allowed_groups', 'core_user_get_users_by_field'].includes(r.fn))); pass('only approved read-only Moodle functions and file hosts reached');
   safe(runtimeLogs); pass('runtime logs contain no fixture credential or authenticated URL');

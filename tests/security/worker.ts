@@ -7,6 +7,8 @@ import { deleteCredential } from "../../src/linking/credential-store.js";
 import { FileIdStore } from "../../src/file-id-store.js";
 import { MoodleClient } from "../../src/moodle-client.js";
 
+import media from "../compatibility/media.json" with { type: "json" };
+
 const stem = "https://stemlearn.sun.ac.za";
 const ems = "https://emslearn.sun.ac.za";
 const identities = new Map([
@@ -43,6 +45,8 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise
       for (let i = 0; i < 6; i++) controller.enqueue(new Uint8Array(1024 * 1024));
       controller.close();
     } }), { headers: { "content-type": "text/plain" } });
+    const file = media.find(f => url.pathname.endsWith("/" + f.filename));
+    if (file) return new Response(Uint8Array.from(atob(file.base64), c => c.charCodeAt(0)), { headers: { "content-type": file.mime } });
     return new Response("fixture notes", { headers: { "content-type": "text/plain" } });
   }
   if (!functions.includes(fn)) throw new Error("Fixture refuses unlisted Moodle functions");
@@ -51,7 +55,7 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise
   switch (fn) {
     case "core_webservice_get_site_info": return json({ userid: identity.id, sitename: identity.name, functions: functions.map(name => ({ name })) });
     case "core_enrol_get_users_courses": return json(courseAccess ? [course] : []);
-    case "core_course_get_contents": return json(courseAccess ? [{ id: 1, name: "General", summary: `<a href='${fileUrl(identity.base)}?token=${token}'>${fileUrl(identity.base)}?token=${token}</a>`, modules: [{ id: 10, name: "Notes", modname: "resource", contents: [{ type: "file", filename: "notes.txt", fileurl: fileUrl(identity.base), filesize: 13, mimetype: "text/plain" }] }] }] : []);
+    case "core_course_get_contents": return json(courseAccess ? [{ id: 1, name: "General", summary: `<a href='${fileUrl(identity.base)}?token=${token}'>${fileUrl(identity.base)}?token=${token}</a>`, modules: [{ id: 10, name: "Notes", modname: "resource", contents: [{ type: "file", filename: "notes.txt", fileurl: fileUrl(identity.base), filesize: 13, mimetype: "text/plain" }, ...media.map(f => ({ type: "file", filename: f.filename, fileurl: `${identity.base}/pluginfile.php/1/${f.filename}`, filesize: atob(f.base64).length, mimetype: f.mime }))] }] }] : []);
     case "mod_assign_get_assignments": return json({ courses: [{ id: 1, assignments: [{ id: 20, cmid: 30, name: "Assignment", duedate: 0 }] }] });
     case "mod_assign_get_submission_status": {
       if (identity.name === "TA" && !submissionAccess) return json({ exception: "required_capability_exception", errorcode: "nopermissions", message: "private fixture-ta" });
