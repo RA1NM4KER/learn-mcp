@@ -1,9 +1,11 @@
+import { readPdfText } from "../pdf-text.js";
+import { renderPdfText } from "./pdf-render.js";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { bytesToBase64, isTextMime } from "../content.js";
 import { MoodleClient, MoodleClientError, MoodleTimeoutError } from "../moodle-client.js";
 import type { MultiSiteContext } from "../multi-site-context.js";
-import { FILE_TRANSFER_POLICY, TEXT_OUTPUT_POLICY } from "../policy.js";
+import { FILE_TRANSFER_POLICY, TEXT_OUTPUT_POLICY, PDF_READ_POLICY } from "../policy.js";
 import { truncateText } from "../text.js";
 import type { FileRef } from "../file-id-store.js";
 import { readOnlyTool } from "./read-only-tool.js";
@@ -72,9 +74,9 @@ export function registerDownloadTool(
     : "";
   readOnlyTool(server,
     "moodle_download_file",
-    `Download a Moodle file by its opaque fileId: a course file (from moodle_list_resources) or a submission attachment (from moodle_list_assignment_submissions, teaching assistants only). Returns text for text/JSON/XML files; returns the raw bytes as an embedded resource for binary formats like PDFs, DOCX, images, up to ${EMBED_MAX_MB} MB.${saveHint} The server fetches the file, so you never need to fetch Moodle URLs directly.`,
+    `Download a Moodle file by its opaque fileId: a course file (from moodle_list_resources) or a submission attachment (from moodle_list_assignment_submissions, teaching assistants only). Returns text for text/JSON/XML files and native image content for PNG/JPEG/GIF/WebP. PDF downloads also include readable text from the first ${PDF_READ_POLICY.defaultPages} pages when extraction succeeds; use moodle_read_file for other page ranges. The original PDF remains available for visual inspection. Returns raw bytes as an embedded resource for other binary formats like PDFs and DOCX, up to ${EMBED_MAX_MB} MB.${saveHint} The server fetches the file, so you never need to fetch Moodle URLs directly.`,
     {
-      fileId: z.string().describe("Opaque fileId returned by moodle_list_resources or moodle_list_assignment_submissions"),
+      fileId: z.string().describe("Opaque fileId returned by moodle_list_resources, moodle_get_page or moodle_list_assignment_submissions"),
     },
     async ({ fileId }, extra) => {
       const signal = extra?.signal;
@@ -101,7 +103,7 @@ export function registerDownloadTool(
         return errorText(transferFailure(err));
       }
       if (!result) {
-        return errorText("fileId is invalid, expired, or was not issued to the current user. Re-run moodle_list_resources or moodle_list_assignment_submissions to get fresh IDs.");
+        return errorText("fileId is invalid, expired, or was not issued to the current user. Re-run moodle_list_resources, moodle_get_page or moodle_list_assignment_submissions to get fresh IDs.");
       }
       if (result.tooLarge) {
         const size = `${(result.ref.filesize / 1024 / 1024).toFixed(1)} MB`;
@@ -134,6 +136,24 @@ export function registerDownloadTool(
         };
       }
 
+      if (/^image\/(png|jpeg|gif|webp)$/.test(mime)) {
+        return {
+          content: [
+            { type: "text" as const, text: `**${truncateText(ref.filename, TEXT_OUTPUT_POLICY.maxLabelCharacters)}** (${mime}, ${downloaded.bytes.length} bytes). Inspect the image below.` },
+            { type: "image" as const, mimeType: mime, data: bytesToBase64(downloaded.bytes) },
+          ],
+        };
+      }
+
+      let pdfPreview: string | undefined;
+      if (mime === "application/pdf") {
+        try {
+          pdfPreview = renderPdfText(ref.filename, await readPdfText(downloaded.bytes.slice(), 1, PDF_READ_POLICY.defaultPages, signal));
+        } catch {
+          pdfPreview = "PDF downloaded successfully, but text extraction was unavailable. The document has not been read. Use moodle_read_file for a smaller page range or inspect the original PDF; do not infer its contents from its filename.";
+        }
+      }
+
       return {
         content: [
           {
@@ -148,6 +168,7 @@ export function registerDownloadTool(
               blob: bytesToBase64(downloaded.bytes),
             },
           },
+          ...(pdfPreview ? [{ type: "text" as const, text: pdfPreview }] : []),
         ],
       };
     },

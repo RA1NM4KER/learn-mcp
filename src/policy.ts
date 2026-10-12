@@ -87,3 +87,15 @@ export async function mapWithConcurrency<T, R>(
 }
 
 export const PAGE_POLICY = { maxMedia: 30, maxContentCharacters: 30_000 } as const;
+
+/** PDF text extraction is page-bounded and never renders or executes PDF content. */
+export const PDF_READ_POLICY = {
+  maxBytes: 5 * 1024 * 1024,
+  maxDocumentPages: 300,
+  defaultPages: 5,
+  maxPagesPerRequest: 5,
+  maxPageCharacters: 12_000,
+  lowTextCharacters: 80,
+  extractionTimeoutMs: 15_000,
+  maxImagePixels: 16_777_216,
+} as const;

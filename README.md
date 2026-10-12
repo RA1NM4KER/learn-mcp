@@ -55,6 +55,23 @@ tables and image alt text. Attached images and PDFs use opaque `fileId`
 handles with the existing download tool and file resources; access is
 rechecked on retrieval. Remote deployments must enable course content.
 
+`moodle_download_file` returns PNG/JPEG/GIF/WebP as native MCP image
+content, so vision-capable clients can inspect schedules directly. PDF
+responses retain the original binary resource and add readable text from
+the first five pages when extraction succeeds. `moodle_read_file` provides
+PDF text for other page ranges (`startPage`, `pageCount`, maximum five pages
+per request), with page numbers, total page count and continuation hints.
+Extraction is limited to 5 MB and 300 document pages, with per-page/output
+caps and explicit low-text warnings. It performs no OCR.
+
+PDF text does not reliably preserve mathematical layout, tables, circuit
+connections or diagrams. The response explicitly requires visual inspection
+before making claims about those features. Original PDFs remain available;
+whether a client can display/process a binary PDF depends on that client's
+attachment support. Native image delivery likewise requires a client that
+passes MCP image content to a vision-capable model. A successful download
+alone is not evidence that an assistant inspected the file.
+
 `upcoming_and_overdue` and `student_brief` reconcile assignment grading
 status with visible gradebook marks using course-module IDs. They label
 released gradebook marks separately from the assignment API status.

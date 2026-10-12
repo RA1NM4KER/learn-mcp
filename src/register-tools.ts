@@ -1,3 +1,4 @@
+import { registerReadFileTool } from "./tools/read-file.js";
 import { registerPageTools } from "./tools/pages.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "./moodle-client.js";
@@ -32,6 +33,7 @@ export function registerAllTools(
   registerFileTools(server, courseRefResolver, contentEnabled);
   // Saving to disk exists only on the local server, which passes downloadDir.
   registerDownloadTool(server, client, contentEnabled, multiSite, downloadDir !== undefined, fileLinkFor);
+  registerReadFileTool(server, client, contentEnabled, multiSite);
   if (contentEnabled && downloadDir !== undefined) registerSaveTool(server, client, downloadDir, multiSite);
   registerAssignmentTools(server, courseRefResolver);
   registerSubmissionTools(server, courseRefResolver, contentEnabled);
