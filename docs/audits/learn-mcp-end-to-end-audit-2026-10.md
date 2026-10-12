@@ -145,3 +145,36 @@ verified in a local workerd runtime with production compatibility flags: HTTP
 200, conflict detected, focused course output and 13,248 notice characters.
 This runtime check complements Node tests and the bundle dry-run; it does not
 substitute for a fresh ChatGPT tool-schema refresh.
+
+## Biochemistry Tutorial Test 4 availability investigation
+
+Live read-only checks on 12 October 2026 reproduce an upstream discrepancy:
+
+| Source | Observed value (Africa/Johannesburg) |
+| --- | --- |
+| Quiz API `timeopen` | 5 October 2026, 09:00 |
+| Quiz API `timeclose` | 12 October 2026, 17:00 (Unix 1791817200) |
+| Plain calendar close event `timestart` | 12 October 2026, 17:00 (same Unix timestamp) |
+| Plain calendar description | “Available from Monday 5 October until Friday 9 October 17:00.” |
+| Course-module description | Same 5–9 October availability statement, also repeated in Afrikaans |
+| Action-calendar response for the inspected window | No matching event; this does not prove the quiz is unavailable |
+
+Method: connected tools course listing → quiz listing and course-filtered
+calendar → student brief; independently, the local authorized Moodle client used
+validated loaders for quizzes, plain/action calendar and course contents. Raw
+URLs, credentials and student identifiers were not recorded. No attempt was
+started, submitted or modified.
+
+The actual calendar and brief both retain the configured 12 October close time
+and the descriptive 9 October cutoff. The server has not transformed the text's
+9 October date into 12 October. This is **verified upstream disagreement**, not a
+confirmed date-conversion/merge defect. An extended quiz close time with an
+unchanged description is plausible but unverified. Access rules, user/group
+overrides and actual attempt availability were not independently checked.
+
+The label `quiz (authoritative)` identifies the structured quiz settings source;
+it must not be interpreted as proof that every student may currently attempt
+the quiz, or that the lecturer's intended deadline was changed. An assistant
+should present both dates with their source and recommend checking the quiz
+page or lecturer before drawing an availability conclusion. No date was chosen
+or overwritten, and no application code was changed for this investigation.

@@ -39,6 +39,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Real-provider security integration (local workerd fixtures)
+        run: npm run test:security
+
       - name: Validate Worker deployment
         run: npx wrangler deploy --dry-run --minify
 

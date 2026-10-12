@@ -19,6 +19,7 @@
     "dev": "npx @modelcontextprotocol/inspector node dist/server.js",
     "deploy": "wrangler deploy",
     "test": "vitest run",
+    "test:security": "tsc -p tests/security/tsconfig.json && node tests/security/run.mjs",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build && npm test"
   },
