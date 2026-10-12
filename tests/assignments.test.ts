@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { MoodleClient } from "../src/moodle-client.js";
-import { listAssignments } from "../src/tools/assignments.js";
+import { getAssignment, listAssignments } from "../src/tools/assignments.js";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -33,5 +33,25 @@ describe("listAssignments", () => {
     expect(text).not.toContain("details unavailable");
     expect(text).toContain("Practical 2");
     expect(text).toContain("ID: `6326`");
+  });
+});
+
+describe("getAssignment source status", () => {
+  it("reports missing submission and grading fields as unknown", async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ userid: 1, sitename: "Test" }));
+    const client = await MoodleClient.create({ baseUrl: "https://moodle.test", auth: { kind: "token", token: "token" } });
+    mockFetch.mockResolvedValueOnce(jsonResponse({}));
+    const text = await getAssignment(client, 1);
+    expect(text).toContain("**Status:** Unknown");
+    expect(text).toContain("**Graded (assignment API):** Unknown");
+    expect(text).not.toContain("Not submitted");
+  });
+  it("preserves a released source status without claiming gradebook absence", async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ userid: 1, sitename: "Test" }));
+    const client = await MoodleClient.create({ baseUrl: "https://moodle.test", auth: { kind: "token", token: "token" } });
+    mockFetch.mockResolvedValueOnce(jsonResponse({ lastattempt: { graded: false, gradingstatus: "released" } }));
+    const text = await getAssignment(client, 1);
+    expect(text).toContain("Assignment API grading status:** released");
+    expect(text).toContain("Check moodle_get_grades");
   });
 });

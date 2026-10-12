@@ -1,30 +1,33 @@
-// Moodle-authored HTML (forum posts, calendar/section descriptions, grade
-// feedback) often carries its one actionable piece of information in a link
-// href (a Zoom/WhatsApp invite, an external reading) — stripping it away
-// loses that. Ordinary links are therefore preserved as "label (href)". The
-// one exception is pluginfile.php URLs: those are Moodle's authenticated
-// file-serving endpoint, and echoing one back would hand out a raw, direct
-// path to course files that bypasses the sealed fileId flow (file-id-store.ts)
-// this server otherwise enforces for every file access. Those hrefs are
-// dropped; only the human-readable label (if any) survives.
-const MOODLE_FILE_URL_PATTERN = /\/pluginfile\.php(?:[/?]|$)/i;
+// Preserve useful external links while hiding authenticated Moodle file URLs.
+function decodeEntities(text: string): string {
+  return text.replace(/&#(x[0-9a-f]+|[0-9]+);|&(amp|quot|apos|lt|gt|nbsp);/gi, (match, numeric: string | undefined, named: string | undefined) => {
+    if (numeric) {
+      const value = numeric[0]?.toLowerCase() === "x" ? parseInt(numeric.slice(1), 16) : parseInt(numeric, 10);
+      return value > 0 && value <= 0x10ffff ? String.fromCodePoint(value) : match;
+    }
+    return ({ amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " " } as Record<string, string>)[named?.toLowerCase() ?? ""] ?? match;
+  });
+}
 
-function isMoodleFileUrl(href: string): boolean {
-  return MOODLE_FILE_URL_PATTERN.test(href);
+/** Redact authored file links in text; actual retrieval still uses sealed fileIds. */
+export function hideMoodleFileUrls(text: string): string {
+  return text.replace(/(?:https?:\/\/[^\s<>"']*|\/[^\s<>"']*)?\/pluginfile\.php(?:[/?#][^\s<>"']*)?(?=$|[\s<>"'])/gi, "[Moodle file link hidden]");
 }
 
 export function stripHtml(html: string): string {
-  return html
-    .replace(/<a\s+[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, (_match, href: string, text: string) => {
-      const label = text.replace(/<[^>]*>/g, "").trim();
-      if (!href || isMoodleFileUrl(href)) {
-        return label && !/^https?:\/\//i.test(label) ? label : "Link";
+  const text = html
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_match, attributes: string, body: string) => {
+      const hrefMatch = attributes.match(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+      const href = decodeEntities(hrefMatch?.[1] ?? hrefMatch?.[2] ?? hrefMatch?.[3] ?? "");
+      const label = decodeEntities(body.replace(/<[^>]*>/g, "")).trim();
+      if (!href || /\/pluginfile\.php(?:[/?#]|$)/i.test(href) || /^(?:javascript|data):/i.test(href)) {
+        return label && !/\/pluginfile\.php(?:[/?#]|$)/i.test(label) ? label : "Link";
       }
       return label && label !== href ? `${label} (${href})` : href;
     })
-    .replace(/<[^>]*>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .trim();
+    .replace(/<[^>]*>/g, "");
+  return hideMoodleFileUrls(decodeEntities(text)).trim();
 }
 
 /** Truncate by Unicode code point, preserving surrogate pairs and signaling omission. */

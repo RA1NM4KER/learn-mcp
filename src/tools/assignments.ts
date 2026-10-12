@@ -81,11 +81,14 @@ export async function getAssignment(client: MoodleClient, assignmentId: number):
       lines.push(`**Last modified:** ${formatDate(submission.timemodified)}`);
     }
   } else {
-    lines.push("**Status:** Not submitted");
+    lines.push("**Status:** Unknown (submission data unavailable)");
   }
 
   const graded = status.lastattempt?.graded;
-  lines.push(`**Graded:** ${graded ? "Yes" : "No"}`);
+  lines.push(`**Graded (assignment API):** ${graded === undefined ? "Unknown" : graded ? "Yes" : "No"}`);
+  const gradingStatus = status.lastattempt?.gradingstatus;
+  if (gradingStatus) lines.push(`**Assignment API grading status:** ${truncateText(gradingStatus, TEXT_OUTPUT_POLICY.maxLabelCharacters)}`);
+  lines.push("_This assignment API status does not establish whether a separate gradebook mark has been released. Check moodle_get_grades for course marks._");
 
   if (status.feedback) {
     lines.push(`\n**Grade:** ${truncateText(status.feedback.gradefordisplay ?? "N/A", TEXT_OUTPUT_POLICY.maxLabelCharacters)}`);

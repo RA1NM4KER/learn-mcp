@@ -220,3 +220,23 @@ describe("MoodleClient.downloadFile", () => {
     expect(calledUrl).toContain("/pluginfile.php/");
   });
 });
+
+describe("transport audit regressions", () => {
+  it.each(["token", "password"] as const)("bounds a stalled %s response body", async (kind) => {
+    mockFetch.mockImplementationOnce((_url: string, init: RequestInit) => ({
+      ok: true,
+      json: () => new Promise((_resolve, reject) => init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))),
+    }));
+    const auth = kind === "token" ? { kind, token: "fixture" } : { kind, username: "fixture", password: "fixture" };
+    await expect(MoodleClient.create({ baseUrl: "https://moodle.test", auth, requestTimeoutMs: 5, maxFileBytes: 1024 })).rejects.toBeInstanceOf(MoodleTimeoutError);
+    expect(mockFetch.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
+  });
+  it("refuses prefix-lookalike pluginfile paths and pre-cancelled transfers", async () => {
+    mockFetch.mockResolvedValueOnce(mockOkJson({ userid: 1, sitename: "Test" }));
+    const client = await MoodleClient.create({ baseUrl: "https://moodle.test", auth: { kind: "token", token: "fixture" } });
+    await expect(client.downloadFile("https://moodle.test/pluginfile.php.evil/path")).rejects.toThrow("only Moodle-managed");
+    const controller = new AbortController();
+    controller.abort();
+    await expect(client.downloadFile("https://moodle.test/pluginfile.php/x", { signal: controller.signal })).rejects.toThrow(/cancel/i);
+  });
+});

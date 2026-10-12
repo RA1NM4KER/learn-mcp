@@ -35,3 +35,16 @@ describe("shared MCP server factory", () => {
     expect(Object.keys(server._registeredTools)).toContain("moodle_list_courses");
   });
 });
+
+it("keeps local and remote tool sets equal apart from local disk saving", () => {
+  const client = {} as MoodleClient;
+  const remote = createSunLearnServer(client, createAnchorOnlyResolver(client)) as unknown as RegisteredSurface;
+  const local = createSunLearnServer(client, createAnchorOnlyResolver(client), undefined, true, "/fixture-downloads") as unknown as RegisteredSurface;
+  const localNames = Object.keys(local._registeredTools).sort();
+  const remoteNames = Object.keys(remote._registeredTools).sort();
+  expect(localNames.filter(name => name !== "moodle_save_file")).toEqual(remoteNames);
+  expect(localNames).toContain("moodle_save_file");
+  expect(remoteNames).toContain("moodle_get_page");
+  expect(remoteNames).toContain("moodle_read_file");
+  expect(Object.keys(local._registeredPrompts).sort()).toEqual(Object.keys(remote._registeredPrompts).sort());
+});

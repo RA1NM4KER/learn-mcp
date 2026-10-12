@@ -1,3 +1,5 @@
+import type { MultiSiteContext } from "../multi-site-context.js";
+import { withOwningSite } from "../tools/download.js";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
@@ -8,7 +10,7 @@ import { isMoodleFileContent } from "../moodle-api.js";
 import { truncateText } from "../text.js";
 
 /** Not registered at all when disabled — see REMOTE_COURSE_CONTENT_ENABLED (oauth/env.ts) — this is the same file-content capability as moodle_download_file, just exposed via the MCP resources protocol instead of a tool call. */
-export function registerResources(server: McpServer, client: MoodleClient, contentEnabled = true): void {
+export function registerResources(server: McpServer, client: MoodleClient, contentEnabled = true, multiSite?: MultiSiteContext): void {
   if (!contentEnabled) return;
   server.resource(
     "moodle-course-files",
@@ -57,7 +59,7 @@ export function registerResources(server: McpServer, client: MoodleClient, conte
     async (uri, { fileId }) => {
       const id = Array.isArray(fileId) ? fileId[0] : fileId;
       if (!id) throw new Error("File access denied. Obtain a fresh fileId from moodle_list_resources.");
-      const authorized = await client.downloadAuthorizedFile(id);
+      const authorized = await withOwningSite(client, multiSite, id, (owner) => owner.downloadAuthorizedFile(id));
       if (!authorized) throw new Error("File access denied. Obtain a fresh fileId from moodle_list_resources.");
       const { ref, downloaded } = authorized;
       const mime = downloaded.mime || ref.mime || "application/octet-stream";

@@ -1,3 +1,4 @@
+import { hideMoodleFileUrls } from "./text.js";
 import { getDocumentProxy } from "unpdf";
 import { PDF_READ_POLICY } from "./policy.js";
 import { truncateText } from "./text.js";
@@ -72,7 +73,7 @@ export async function readPdfText(bytes: Uint8Array, startPage: number, pageCoun
           page.cleanup();
         }
         // A PDF can print authenticated Moodle URLs as ordinary text too.
-        text = text.replace(/(?:https?:\/\/|\/)[^\s<>]*\/pluginfile\.php[^\s<>]*/gi, "[Moodle file link hidden]").trim();
+        text = hideMoodleFileUrls(text).trim();
         pages.push({ number, text: truncateText(text, PDF_READ_POLICY.maxPageCharacters), lowText: text.length < PDF_READ_POLICY.lowTextCharacters, truncated });
       }
       return { totalPages: pdf.numPages, pages, nextPage: endPage < pdf.numPages ? endPage + 1 : null };

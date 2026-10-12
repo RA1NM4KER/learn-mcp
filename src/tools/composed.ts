@@ -10,7 +10,7 @@ import type { MoodleAssignment, MoodleCourse, MoodleGradeItem } from "../moodle-
 import { truncateText } from "../text.js";
 import { formatMoodleDateTime } from "../format-date.js";
 import { mapAccountWideSites, type ConnectedSite, type MultiSiteContext } from "../multi-site-context.js";
-import { getNotificationsAccountWide } from "./notifications.js";
+import { getNotifications, getNotificationsAccountWide } from "./notifications.js";
 import { getCalendarEventsAccountWide } from "./calendar.js";
 import { readOnlyTool } from "./read-only-tool.js";
 
@@ -269,8 +269,8 @@ const TIMING_BUCKET_ORDER: Record<TimingBucket, number> = {
 
 export async function upcomingAndOverdue(client: MoodleClient, multiSite?: MultiSiteContext): Promise<string> {
   const { results, unavailable } = await mapAccountWideSites(client, multiSite, async (_site, siteClient) => {
-    if (!siteClient.supports("mod_assign_get_assignments")) return { client: siteClient, courses: [] as MoodleCourse[], assignments: null };
     const courses = await loadEnrolledCourses(siteClient);
+    if (!siteClient.supports("mod_assign_get_assignments")) return { client: siteClient, courses, assignments: null };
     if (courses.length === 0) return { client: siteClient, courses, assignments: null };
     const courseIdParams = Object.fromEntries(courses.map((c, i) => [`courseids[${i}]`, c.id]));
     const assignData = await loadAssignments(siteClient, courseIdParams);
@@ -280,10 +280,12 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
   const totalCourses = results.reduce((sum, r) => sum + r.value.courses.length, 0);
   if (totalCourses === 0) {
     return unavailable.length > 0
-      ? `You are not enrolled in any courses.\n\n_Temporarily unavailable: ${unavailable.join(", ")}._`
+      ? `Enrollment could not be fully determined.\n\n_Temporarily unavailable: ${unavailable.join(", ")}._`
       : "You are not enrolled in any courses.";
   }
 
+  const missingAssignmentApis = results.filter(r => r.value.courses.length > 0 && !r.value.assignments).map(r => r.site.name);
+  unavailable.push(...missingAssignmentApis.map(name => `${name} assignment API`));
   const now = Math.floor(Date.now() / 1000);
   const candidates: TaskCandidate[] = [];
   const historicalCandidates: TaskCandidate[] = [];
@@ -453,11 +455,14 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
  * deadline state and recent notifications instead of asking an agent to infer
  * urgency from raw Moodle entities. */
 export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteContext): Promise<string> {
-  const [deadlines, notifications, calendar] = await Promise.all([
+  const sections = await Promise.allSettled([
     upcomingAndOverdue(client, multiSite),
-    multiSite ? getNotificationsAccountWide(client, multiSite, 10) : Promise.resolve("Notifications unavailable."),
+    multiSite ? getNotificationsAccountWide(client, multiSite, 10) : getNotifications(client, 10),
     getCalendarEventsAccountWide(client, multiSite, 14),
   ]);
+  const deadlines = sections[0]!.status === "fulfilled" ? sections[0]!.value : "Deadlines unavailable; completeness cannot be confirmed.";
+  const notifications = sections[1]!.status === "fulfilled" ? sections[1]!.value : "Notifications unavailable; please retry.";
+  const calendar = sections[2]!.status === "fulfilled" ? sections[2]!.value : "Calendar unavailable; quiz and practical closures could not be checked.";
   // References remain available through upcoming_and_overdue; a briefing
   // should spend its limited attention on what requires action, not opaque
   // routing tokens or routine inherited-shell archaeology.
@@ -484,7 +489,7 @@ export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteCo
   const calendarOnly = [...calendarGroups.entries()].flatMap(([heading, lines]) => [heading, ...lines]);
   const calendarSection = calendarOnly.length > 0
     ? `\n\n### Quiz and practical closures\n${calendarOnly.join("\n")}`
-    : "";
+    : `\n\n### Calendar coverage\n${calendar}`;
   const notificationBlocks = notifications.split(/\n\s*\n/).filter((block) => block.startsWith("- "));
   const ranked = { urgent: [] as string[], important: [] as string[], routine: [] as string[] };
   for (const block of notificationBlocks) {

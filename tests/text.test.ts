@@ -2,6 +2,20 @@ import { describe, it, expect } from "vitest";
 import { sanitizeAndTruncateHtml, stripHtml, truncateText } from "../src/text.js";
 
 describe("stripHtml", () => {
+  it.each([
+    "<a href='https://moodle.test/pluginfile.php/x?token=secret'>https://moodle.test/pluginfile.php/x?token=secret</a>",
+    '<a href=/pluginfile.php/x?token=secret>/pluginfile.php/x?token=secret</a>',
+    '<a href="https://moodle.test/&#112;luginfile.php/x?token=secret">Download</a>',
+    '<p>/pluginfile.php/x?token=secret</p>',
+    '<p>https://moodle.test/pluginfile.php#token=secret</p>',
+  ])("redacts alternative quoting, entities, and plaintext file links: %s", (html) => {
+    expect(stripHtml(html)).not.toMatch(/pluginfile|secret/);
+  });
+  it("preserves single-quoted external links and decoded entities", () => {
+    expect(stripHtml("<a href='https://example.com/?a=1&amp;b=2'>Reading</a>"))
+      .toBe("Reading (https://example.com/?a=1&b=2)");
+  });
+
   it("keeps an ordinary link's href alongside its readable label", () => {
     // Regression: a real forum post ("Join our Whatsapp Group with link or
     // QR") linked its invite as <a href="...">this link</a> — losing the

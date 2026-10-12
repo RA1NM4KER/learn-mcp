@@ -94,42 +94,29 @@ export class MoodleClient {
     return client;
   }
 
-  private async fetch(url: string, init: RequestInit = {}): Promise<Response> {
+  /** The deadline covers response headers AND JSON body consumption. */
+  private static async fetchJson(url: string, init: RequestInit, timeoutMs: number): Promise<unknown> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return await fetch(url, { ...init, signal: controller.signal });
-    } catch (error) {
-      if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
-        throw new MoodleTimeoutError();
+      const response = await fetch(url, { ...init, redirect: "error", signal: controller.signal });
+      if (!response.ok) throw new MoodleClientError("Moodle API request failed. Please try again.", "api");
+      try { return await response.json(); }
+      catch (error) {
+        if (controller.signal.aborted) throw new MoodleTimeoutError();
+        throw new MoodleValidationError();
       }
+    } catch (error) {
+      if (error instanceof MoodleClientError) throw error;
+      if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) throw new MoodleTimeoutError();
       throw new MoodleClientError("Unable to reach Moodle. Please try again.", "network");
-    } finally {
-      clearTimeout(timer);
-    }
+    } finally { clearTimeout(timer); }
   }
 
   private static async login(baseUrl: string, username: string, password: string, requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<string> {
     const url = `${baseUrl}/login/token.php`;
     const body = new URLSearchParams({ username, password, service: "moodle_mobile_app" });
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
-    let res: Response;
-    try { res = await fetch(url, { method: "POST", body, signal: controller.signal }); }
-    catch (error) {
-      if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) throw new MoodleTimeoutError();
-      throw new MoodleClientError("Unable to reach Moodle. Please try again.", "network");
-    }
-    finally { clearTimeout(timer); }
-    const text = await res.text();
-    let decoded: unknown;
-    try {
-      decoded = JSON.parse(text);
-    } catch {
-      throw new Error(
-        "Moodle login returned an unexpected response. Your school may require SSO; use `npm run auth` or a Moodle token instead."
-      );
-    }
+    const decoded = await MoodleClient.fetchJson(url, { method: "POST", body }, requestTimeoutMs);
     const parsed = MoodleLoginResponseSchema.safeParse(decoded);
     if (!parsed.success) {
       throw new Error("Moodle login returned an unexpected response. Use `npm run auth` or a Moodle token instead.");
@@ -167,14 +154,7 @@ export class MoodleClient {
         ]),
       ),
     });
-    const res = await this.fetch(url, { method: "POST", body });
-    if (!res.ok) throw new Error("Moodle API request failed. Please try again.");
-    let data: unknown;
-    try {
-      data = await res.json();
-    } catch {
-      throw new MoodleValidationError();
-    }
+    const data = await MoodleClient.fetchJson(url, { method: "POST", body }, this.requestTimeoutMs);
     const moodleError = MoodleErrorResponseSchema.safeParse(data);
     if (moodleError.success) {
       if (moodleError.data.errorcode === "webservicesnotenabled") {
@@ -223,6 +203,7 @@ export class MoodleClient {
    */
   async downloadFile(fileurl: string, options: FileTransferOptions = {}): Promise<DownloadedFile> {
     this.assertSafeFileUrl(fileurl);
+    if (options.signal?.aborted) throw new FileTransferCancelledError();
     const parsed = new URL(fileurl);
     parsed.searchParams.set("token", this.token);
 
@@ -233,7 +214,7 @@ export class MoodleClient {
     const onCancel = () => deadline.abort();
     options.signal?.addEventListener("abort", onCancel, { once: true });
     try {
-      const res = await fetch(parsed.toString(), { signal: deadline.signal });
+      const res = await fetch(parsed.toString(), { redirect: "error", signal: deadline.signal });
       return await this.readDownloadedFile(res, maxBytes, deadline.signal, options.onChunk);
     } catch (error) {
       if (options.signal?.aborted) throw new FileTransferCancelledError();
@@ -259,7 +240,7 @@ export class MoodleClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(parsed.toString(), { signal: controller.signal });
+      const res = await fetch(parsed.toString(), { redirect: "error", signal: controller.signal });
       if (!res.ok) throw new MoodleClientError(`Moodle returned HTTP ${res.status} for this file.`, "api");
       return res;
     } catch (error) {
@@ -362,8 +343,7 @@ export class MoodleClient {
       throw new Error("Refused: file URL does not use the configured Moodle protocol");
     }
     if (
-      !parsed.pathname.includes("/pluginfile.php") &&
-      !parsed.pathname.includes("/webservice/pluginfile.php")
+      !/(?:^|\/)pluginfile\.php(?:\/|$)/.test(parsed.pathname)
     ) {
       throw new Error("Refused: only Moodle-managed pluginfile.php URLs can be fetched");
     }

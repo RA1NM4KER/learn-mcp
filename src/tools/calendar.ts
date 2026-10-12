@@ -107,9 +107,9 @@ export async function getCalendarEvents(
       }
     }
   }
-  const items = mergeCalendarItems([...calendarItems, ...assignmentItems, ...quizItems])
-    .sort((a, b) => a.timestart - b.timestart)
-    .slice(0, CALENDAR_EVENT_POLICY.maxRendered);
+  const allItems = mergeCalendarItems([...calendarItems, ...assignmentItems, ...quizItems])
+    .sort((a, b) => a.timestart - b.timestart);
+  const items = allItems.slice(0, CALENDAR_EVENT_POLICY.maxRendered);
 
   if (items.length === 0) {
     return courseId
@@ -141,6 +141,7 @@ export async function getCalendarEvents(
     lines.push("");
   }
 
+  if (allItems.length > items.length) lines.push(`_${allItems.length - items.length} additional events were omitted; narrow the course or date range._`);
   return truncateText(lines.join("\n"), TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 

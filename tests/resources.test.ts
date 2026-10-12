@@ -30,3 +30,36 @@ describe("MCP resource enumeration", () => {
     expect(result.resources.at(-1)!.name).toContain("TWO");
   });
 });
+
+it("reads secondary-site handles through their owner and rechecks current access", async () => {
+  const config = { baseUrl: "https://emslearn.sun.ac.za", auth: { kind: "token" as const, token: "secondary" }, maxFileBytes: 1024, requestTimeoutMs: 1000 };
+  mockFetch.mockResolvedValueOnce(jsonResponse({ userid: 1, sitename: "Anchor" }));
+  const anchor = await MoodleClient.create({ ...config, baseUrl: "https://stemlearn.sun.ac.za", auth: { kind: "token", token: "anchor" } });
+  mockFetch.mockResolvedValueOnce(jsonResponse({ userid: 2, sitename: "Secondary" }));
+  const owner = await MoodleClient.create(config);
+  const url = "https://emslearn.sun.ac.za/pluginfile.php/1/notes.txt";
+  const id = await owner.fileIdStore.seal({ userId: 2, courseId: 3, fileurl: url, mime: "text/plain", filename: "notes.txt", filesize: 5 });
+  let allowed = true;
+  mockFetch.mockImplementation((request: string, init?: RequestInit) => {
+    const parsed = new URL(request);
+    expect(parsed.host).toBe("emslearn.sun.ac.za");
+    if (parsed.pathname.includes("pluginfile.php")) {
+      expect(parsed.searchParams.get("token")).toBe("secondary");
+      return new Response("hello", { headers: { "content-type": "text/plain" } });
+    }
+    const fn = new URLSearchParams(String(init?.body)).get("wsfunction");
+    if (fn === "core_webservice_get_site_info") return jsonResponse({ userid: 2, sitename: "Secondary" });
+    if (fn === "core_enrol_get_users_courses") return jsonResponse([{ id: 3, fullname: "Course", shortname: "C" }]);
+    return jsonResponse([{ id: 1, name: "General", modules: [{ id: 1, name: "Notes", modname: "resource", contents: allowed ? [{ type: "file", filename: "notes.txt", fileurl: url, filesize: 5 }] : [] }] }]);
+  });
+  let read: ((uri: URL, args: { fileId: string }) => Promise<unknown>) | undefined;
+  const server = { resource: (_name: string, _template: unknown, handler: typeof read) => { read = handler; } };
+  registerResources(server as never, anchor, true, {
+    anchorSite: { id: "stemlearn", name: "Anchor" },
+    additionalSites: [{ site: { id: "emslearn", name: "Secondary", baseUrl: config.baseUrl, enabled: true }, config }],
+    seal: async (_kind, _site, value) => value,
+  });
+  expect(await read!(new URL(`moodle://files/${id}`), { fileId: id })).toMatchObject({ contents: [{ text: "hello" }] });
+  allowed = false;
+  await expect(read!(new URL(`moodle://files/${id}`), { fileId: id })).rejects.toThrow("File access denied");
+});

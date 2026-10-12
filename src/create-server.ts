@@ -41,7 +41,7 @@ export function createSunLearnServer(
 ): McpServer {
   const server = new McpServer(LEARN_MCP_SERVER_INFO);
   registerAllTools(server, client, courseRefResolver, multiSite, contentEnabled, downloadDir, fileLinkFor);
-  registerResources(server, client, contentEnabled);
+  registerResources(server, client, contentEnabled, multiSite);
   registerPrompts(server);
   return server;
 }

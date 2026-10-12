@@ -234,3 +234,16 @@ describe("getCalendarEvents", () => {
     expect(result).toContain("Text truncated after");
   });
 });
+
+it("reports calendar collection omissions instead of implying completeness", async () => {
+  const client = await makeClient();
+  const now = Math.floor(Date.now() / 1000);
+  mockFetch.mockImplementation(routedFetchMock({
+    core_enrol_get_users_courses: [COURSE],
+    core_calendar_get_action_events_by_timesort: { events: [] },
+    core_calendar_get_calendar_events: { events: Array.from({ length: 103 }, (_, i) => ({ id: i + 1, name: `Event ${i}`, courseid: 2722, timestart: now + 100 + i })) },
+  }));
+  const text = await getCalendarEvents(client);
+  expect(text).toContain("3 additional events were omitted");
+  expect(text).not.toContain("**Event 102**");
+});
