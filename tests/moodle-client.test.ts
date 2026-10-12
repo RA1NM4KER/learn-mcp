@@ -229,7 +229,7 @@ describe("transport audit regressions", () => {
     }));
     const auth = kind === "token" ? { kind, token: "fixture" } : { kind, username: "fixture", password: "fixture" };
     await expect(MoodleClient.create({ baseUrl: "https://moodle.test", auth, requestTimeoutMs: 5, maxFileBytes: 1024 })).rejects.toBeInstanceOf(MoodleTimeoutError);
-    expect(mockFetch.mock.calls.at(-1)?.[1]?.redirect).toBe("error");
+    expect(mockFetch.mock.calls.at(-1)?.[1]?.redirect).toBe("manual");
   });
   it("refuses prefix-lookalike pluginfile paths and pre-cancelled transfers", async () => {
     mockFetch.mockResolvedValueOnce(mockOkJson({ userid: 1, sitename: "Test" }));
@@ -239,4 +239,17 @@ describe("transport audit regressions", () => {
     controller.abort();
     await expect(client.downloadFile("https://moodle.test/pluginfile.php/x", { signal: controller.signal })).rejects.toThrow(/cancel/i);
   });
+});
+
+it("uses Workers-supported manual redirects and refuses redirects without following credentials", async () => {
+  const requests: RequestInit[] = [];
+  mockFetch.mockImplementationOnce((_url: string, init: RequestInit) => {
+    requests.push(init);
+    if (init.redirect !== "manual") throw new TypeError("Workers only supports manual or follow");
+    return new Response(null, { status: 307, headers: { location: "https://other.test/receive" } });
+  });
+  await expect(MoodleClient.create({ baseUrl: "https://moodle.test", auth: { kind: "token", token: "fixture" } }))
+    .rejects.toThrow("Moodle API request failed");
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.redirect).toBe("manual");
 });

@@ -99,7 +99,7 @@ export class MoodleClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url, { ...init, redirect: "error", signal: controller.signal });
+      const response = await fetch(url, { ...init, redirect: "manual", signal: controller.signal });
       if (!response.ok) throw new MoodleClientError("Moodle API request failed. Please try again.", "api");
       try { return await response.json(); }
       catch (error) {
@@ -214,7 +214,7 @@ export class MoodleClient {
     const onCancel = () => deadline.abort();
     options.signal?.addEventListener("abort", onCancel, { once: true });
     try {
-      const res = await fetch(parsed.toString(), { redirect: "error", signal: deadline.signal });
+      const res = await fetch(parsed.toString(), { redirect: "manual", signal: deadline.signal });
       return await this.readDownloadedFile(res, maxBytes, deadline.signal, options.onChunk);
     } catch (error) {
       if (options.signal?.aborted) throw new FileTransferCancelledError();
@@ -240,7 +240,7 @@ export class MoodleClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(parsed.toString(), { redirect: "error", signal: controller.signal });
+      const res = await fetch(parsed.toString(), { redirect: "manual", signal: controller.signal });
       if (!res.ok) throw new MoodleClientError(`Moodle returned HTTP ${res.status} for this file.`, "api");
       return res;
     } catch (error) {
