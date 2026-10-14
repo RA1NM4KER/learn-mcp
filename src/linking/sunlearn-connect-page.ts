@@ -1,7 +1,7 @@
 // The real, shared "Connect your SUNLearn courses" page. Framework-free,
-// server-rendered HTML. Every not-yet-connected site's step dialog is
+// server-rendered HTML. Every site's connect/reconnect dialog is
 // rendered once, up front, always closed — opening one is a pure
-// client-side `showModal()` call from that site's own "Connect" button,
+// client-side `showModal()` call from that site's own Connect or Reconnect button,
 // never a script that runs on page load. That's deliberate: this page (and
 // its dialogs) must never "pop up" just because the page was loaded or
 // refreshed — only a genuine click opens anything. The one exception is a
@@ -20,7 +20,7 @@
 // "No Moodle account on this instance" is deliberately never rendered as an
 // error anywhere on this page — a student may legitimately have accounts on
 // only one or two of the five environments; that's just a site that stays
-// "Connect" instead of becoming "Connected".
+// "Connect" instead of becoming "Saved".
 //
 // Light-mode only, by design: this is a general-public-facing page reached
 // via an official-looking university-adjacent login flow, so it favors a
@@ -36,7 +36,7 @@ export interface ConnectSiteStatus {
   connected: boolean;
 }
 
-/** One not-yet-connected site's precomputed step dialog — rendered closed; opened only by that site's own "Connect" button. */
+/** One site's precomputed connect/reconnect dialog — rendered closed; opened only by that site's own Connect or Reconnect button. */
 export interface SitePanel {
   siteId: string;
   siteName: string;
@@ -48,7 +48,7 @@ export interface RenderConnectPageOptions {
   sites: ConnectSiteStatus[];
   /** The pending linking-session id, submitted by every form on this page. */
   sessionId: string;
-  /** One entry per not-yet-connected site — every dialog is in the page from the start, closed, ready to open on click with zero network round trip. */
+  /** One entry per site that can connect or reconnect — every dialog is in the page from the start, closed, ready to open on click with zero network round trip. */
   panels: SitePanel[];
   /** A paste attempt for this site just failed — its dialog reopens showing errorMessage, as the direct response to that submit (not a page load). */
   autoOpenSiteId?: string;
@@ -93,7 +93,7 @@ function avatarColorFor(siteId: string): { bg: string; fg: string } {
   return AVATAR_COLORS[siteId] ?? DEFAULT_AVATAR_COLOR;
 }
 
-function siteRow(site: ConnectSiteStatus, sessionId: string, disconnectFormAction?: string): string {
+function siteRow(site: ConnectSiteStatus, sessionId: string, disconnectFormAction?: string, canReconnect = false): string {
   const name = escapeHtml(site.name);
   const initials = escapeHtml(site.name.slice(0, 2).toUpperCase());
   const { bg, fg } = avatarColorFor(site.id);
@@ -108,7 +108,10 @@ function siteRow(site: ConnectSiteStatus, sessionId: string, disconnectFormActio
           <button type="submit" class="btn btn-ghost btn-sm">Disconnect</button>
         </form>`
       : "";
-    right = `<div class="site-row-right"><span class="badge badge-success">Connected</span>${disconnect}</div>`;
+    const reconnect = canReconnect
+      ? `<button type="button" class="btn btn-default btn-sm" onclick="document.getElementById('panel-${escapeHtml(site.id)}').showModal()">Reconnect</button>`
+      : "";
+    right = `<div class="site-row-right"><span class="badge badge-success">Saved</span>${reconnect}${disconnect}</div>`;
   } else {
     // Pure client-side reveal of that site's own already-rendered (closed) dialog —
     // no form submission, no navigation, no network round trip.
@@ -125,6 +128,7 @@ function sitePanel(panel: SitePanel, sessionId: string, isAutoOpen: boolean, err
   return `<dialog class="step-dialog" id="panel-${escapeHtml(panel.siteId)}"${openAttr}${backdropCloseAttr}>
     ${closeButton}
     <h2>Connect ${escapeHtml(panel.siteName)}</h2>
+    <p>Connecting again replaces this site’s saved credential. Your other sites and Learn MCP data are kept.</p>
     ${isAutoOpen && errorMessage ? `<p class="error">${escapeHtml(errorMessage)}</p>` : ""}
     <p><strong>Step 1.</strong> Sign in through the official Stellenbosch University login page. We never see your password.</p>
     <a class="button-link" href="${escapeHtml(panel.launchUrl)}" target="_blank" rel="noopener"><button type="button">Open ${escapeHtml(panel.siteName)}</button></a>
@@ -152,7 +156,7 @@ function sitePanel(panel: SitePanel, sessionId: string, isAutoOpen: boolean, err
 
 export function renderSunlearnConnectPage(options: RenderConnectPageOptions): string {
   const siteListHtml = options.sites
-    .map((site) => siteRow(site, options.sessionId, options.disconnectFormAction))
+    .map((site) => siteRow(site, options.sessionId, options.disconnectFormAction, options.panels.some(panel => panel.siteId === site.id)))
     .join("\n");
 
   const panelsHtml = options.panels

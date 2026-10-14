@@ -26,8 +26,8 @@ import { CLIENT_METADATA_UNAVAILABLE, isCimdFetchError } from "./authorize-error
 // beginConsent/approveConsent/denyConsent afterward.
 //
 // A single pending session (src/linking/session-store.ts) carries the
-// validated AuthRequest across the whole flow. Every not-yet-connected
-// site's step dialog is precomputed up front from that one session's
+// validated AuthRequest across the whole flow. Every site's connect/reconnect
+// dialog is precomputed up front from that one session's
 // passport (see panelsForSession) and rendered closed — there is no
 // separate "choose a site" server round trip; a student opens whichever
 // site's dialog they want with a pure client-side showModal() click. The
@@ -80,10 +80,9 @@ async function siteStatuses(env: Env, userId: string): Promise<ConnectSiteStatus
   return listEnabledSites().map((s) => ({ id: s.id, name: s.name, connected: connected.has(s.id) }));
 }
 
-/** One precomputed, closed-by-default dialog per not-yet-connected site, all sharing this session's one passport. */
+/** One precomputed, closed-by-default dialog per site, including credential replacement, all sharing this session's one passport. */
 function panelsForSession(sites: ConnectSiteStatus[], passport: string): SitePanel[] {
   return sites
-    .filter((s) => !s.connected)
     .map((s) => {
       const site = getSiteById(s.id)!;
       return { siteId: site.id, siteName: site.name, launchUrl: buildMobileLaunchUrl(site, passport), formAction: "/authorize/link" };

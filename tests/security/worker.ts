@@ -14,11 +14,13 @@ const ems = "https://emslearn.sun.ac.za";
 const identities = new Map([
   ["fixture-alice", { id: 101, name: "Alice", base: stem }],
   ["fixture-bob", { id: 102, name: "Bob", base: stem }],
+  ["fixture-bob-new", { id: 102, name: "Bob", base: stem }],
   ["fixture-alice-ems", { id: 201, name: "Alice EMS", base: ems }],
   ["fixture-ta", { id: 104, name: "TA", base: stem }],
   ["fixture-legacy", { id: 103, name: "Legacy", base: stem }],
 ]);
 let mode = "normal";
+let rejectOldBob = false;
 let courseAccess = true;
 let submissionAccess = true;
 const requests: { host: string; fn: string; method: string; identity: string }[] = [];
@@ -33,6 +35,7 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise
   const token = body.get("wstoken") ?? url.searchParams.get("token") ?? "";
   const identity = identities.get(token);
   if (!identity || url.origin !== identity.base) throw new Error("Fixture refused a credential destination");
+  if (rejectOldBob && token === "fixture-bob") return json({ exception: "moodle_exception", errorcode: "invalidtoken", message: "Private fixture credential rejection" });
   const fn = body.get("wsfunction") ?? "file";
   requests.push({ host: url.host, fn, method: init?.method ?? "GET", identity: identity.name });
   if (init?.redirect !== "manual") throw new TypeError("Fixture requires Workers-supported redirect protection");
@@ -87,6 +90,7 @@ export default {
     const userId = await lookupAlias(env.DB, stem, identities.get(userToken)!.id);
     if (!userId) return new Response("Fixture identity missing", { status: 400 });
     switch (data.action) {
+      case "reject-old-bob": rejectOldBob = true; return json({ ok: true });
       case "mode": mode = data.value ?? "normal"; return json({ ok: true });
       case "submission-access": submissionAccess = data.value !== "deny"; return json({ ok: true });
       case "access": courseAccess = data.value !== "deny"; return json({ ok: true });

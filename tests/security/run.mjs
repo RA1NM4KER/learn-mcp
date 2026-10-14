@@ -14,7 +14,7 @@ let runtime;
 let count = 0;
 const passed = [];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const sensitive = ['fixture-ta', 'fixture-alice', 'fixture-bob', 'fixture-alice-ems', 'fixture-legacy', 'fixture-legacy-bearer'];
+const sensitive = ['fixture-ta', 'fixture-alice', 'fixture-bob', 'fixture-bob-new', 'fixture-alice-ems', 'fixture-legacy', 'fixture-legacy-bearer'];
 const safe = value => { const text = typeof value === 'string' ? value : JSON.stringify(value); for (const secret of sensitive) assert.ok(!text.includes(secret), 'Response disclosed a fixture credential'); assert.ok(!/https?:[^\s"<>]*\/pluginfile\.php/i.test(text), 'Response disclosed an authenticated Moodle URL'); };
 const pass = name => { passed.push(name); console.log(`PASS ${name}`); };
 async function request(path, options = {}) {
@@ -33,6 +33,7 @@ const call = (token, name, args = {}) => rpc(token, 'tools/call', { name, argume
 const textOf = result => result.data?.result?.content?.filter(c => c.type === 'text').map(c => c.text).join('\n') ?? '';
 const inputValue = (html, name) => html.match(new RegExp(`name="${name}" value="([^"]+)"`))?.[1];
 let clientId;
+let bobMoodleToken = "fixture-bob";
 const callback = 'http://localhost:54321/callback';
 async function consent(user = 'alice', overrides = {}, cookieMode = 'normal', linkEms = false) {
   const verifier = randomBytes(32).toString('base64url');
@@ -47,8 +48,10 @@ async function consent(user = 'alice', overrides = {}, cookieMode = 'normal', li
     const connectionLink = `moodlemobile://token=${Buffer.from(`${siteHash}:::${token}`).toString('base64')}`;
     const linked = await post('/authorize/link', { sessionId, siteId, connectionLink });
     assert.equal(linked.status, 200, 'Fixture account linking failed');
+    assert.ok(linked.text.includes('>Reconnect</button>'), 'Saved site lacks reconnect action');
+    assert.ok(linked.text.includes(`id="panel-${siteId}"`), 'Saved site lacks replacement dialog');
   }
-  await link('stemlearn', 'https://stemlearn.sun.ac.za', user === 'ta' ? 'fixture-ta' : user === 'bob' ? 'fixture-bob' : 'fixture-alice');
+  await link('stemlearn', 'https://stemlearn.sun.ac.za', user === 'ta' ? 'fixture-ta' : user === 'bob' ? bobMoodleToken : 'fixture-alice');
   if (linkEms) await link('emslearn', 'https://emslearn.sun.ac.za', 'fixture-alice-ems');
   const page = await post('/authorize/continue', { sessionId });
   assert.equal(page.status, 200, 'Consent page failed');
@@ -126,7 +129,7 @@ try {
   r = await request('/mcp', { method: 'POST', headers: { authorization: `Bearer ${alice.access_token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: '{bad' }); assert.equal(r.status, 400); assert.equal(r.data.error?.code, -32700); safe(r.text); pass('malformed JSON safely rejected before Moodle');
   r = await call(alice.access_token, 'moodle_list_assignment_submissions', { courseId: 1, assignmentId: 20 }); assert.equal(r.data.result?.isError, true); safe(r.text); pass('unconstrained TA submission lookup rejected');
   r = await call(alice.access_token, 'moodle_list_assignment_submissions', { courseId: 1, assignmentId: 20, group: 7 }); assert.equal(r.data.result?.isError, true); assert.match(textOf(r), /grading access/i); safe(r.text); pass('upstream grading permission denial enforced through actual authenticated transport');
-  await fixture('mode', { value: 'upstream-error' }); r = await call(alice.access_token, 'moodle_list_courses'); assert.equal(r.status, 502); safe(r.text); await fixture('mode'); pass('upstream private error text sanitized');
+  await fixture('mode', { value: 'upstream-error' }); r = await call(alice.access_token, 'moodle_list_courses'); assert.equal(r.status, 200); assert.equal(r.data.result?.isError, true); assert.match(textOf(r), /Reconnect/); safe(r.text); await fixture('mode'); pass('upstream private error text sanitized');
   await fixture('audience', { value: 'https://wrong-resource.invalid/mcp' }); r = await rpc(alice.access_token, 'tools/list'); assert.equal(r.status, 401); await fixture('audience'); pass('actual stored token with wrong audience rejected');
   const ta = await login('ta');
   r = await call(ta.access_token, 'moodle_list_assignment_submissions', { courseId: 1, assignmentId: 20, group: 8 }); assert.equal(r.data.result?.isError, true); safe(r.text); pass('grader group filter constrained to assignment allowed groups');
@@ -138,6 +141,23 @@ try {
   const refreshed = await post('/oauth/token', { grant_type: 'refresh_token', client_id: clientId, refresh_token: alice.refresh_token, resource: `${origin}/mcp` }); assert.equal(refreshed.status, 200); sensitive.push(refreshed.data.access_token, refreshed.data.refresh_token); r = await rpc(refreshed.data.access_token, 'tools/list'); assert.equal(r.status, 200); pass('real refresh-token renewal authenticates MCP');
   r = await post('/oauth/token', { grant_type: 'refresh_token', client_id: clientId, refresh_token: bob.refresh_token, resource: 'https://wrong-resource.invalid/mcp' }); assert.equal(r.status, 400); pass('refresh resource mismatch rejected');
   r = await call('fixture-legacy-bearer', 'moodle_list_courses'); assert.ok(textOf(r).includes('Legacy course')); assert.ok(!textOf(r).includes('Alice course')); safe(r.text); pass('legacy static bearer resolves fixed identity only');
+  // Replace a rejected Moodle credential while keeping the existing OAuth grant,
+  // identity aliases and other users' data. No delete/disconnect endpoint is used.
+  await fixture('reject-old-bob');
+  r = await call(bob.access_token, 'moodle_list_courses'); assert.equal(r.status, 200); assert.equal(r.data.result?.isError, true); assert.match(textOf(r), /do not need to delete/); safe(r.text); pass('rejected Moodle credential returns actionable MCP tool error without expiring OAuth grant');
+  r = await rpc(bob.access_token, 'tools/list'); assert.equal(r.status, 502); assert.equal(r.data.code, 'moodle_relink_required'); safe(r.text); pass('discovery authentication failure has specific recovery code');
+  const repairVerifier = randomBytes(32).toString('base64url');
+  const repairParams = new URLSearchParams({ client_id: clientId, redirect_uri: callback, response_type: 'code', scope: 'stemlearn:read offline_access', state: 'repair', code_challenge: createHash('sha256').update(repairVerifier).digest('base64url'), code_challenge_method: 'S256', resource: `${origin}/mcp` });
+  const repairPage = await request(`/authorize?${repairParams}`);
+  const repairSession = inputValue(repairPage.text, 'sessionId');
+  const repairPassport = repairPage.text.match(/passport=([a-f0-9]+)/)?.[1];
+  assert.ok(repairSession && repairPassport);
+  bobMoodleToken = 'fixture-bob-new';
+  const repairHash = createHash('md5').update('https://stemlearn.sun.ac.za' + repairPassport).digest('hex');
+  const repaired = await post('/authorize/link', { sessionId: repairSession, siteId: 'stemlearn', connectionLink: `moodlemobile://token=${Buffer.from(`${repairHash}:::${bobMoodleToken}`).toString('base64')}` });
+  assert.equal(repaired.status, 200); assert.ok(repaired.text.includes('>Reconnect</button>')); assert.ok(repaired.text.includes('id="panel-stemlearn"')); safe(repaired.text);
+  r = await call(bob.access_token, 'moodle_list_courses'); assert.equal(r.status, 200); assert.ok(textOf(r).includes('Bob course')); pass('fresh Moodle credential restores existing OAuth grant without deleting data');
+  r = await call(ta.access_token, 'moodle_list_courses'); assert.equal(r.status, 200); assert.ok(textOf(r).includes('TA course')); pass('credential repair preserves other accounts');
   await fixture('unlink', { user: 'bob' }); r = await call(bob.access_token, 'moodle_list_courses'); assert.equal(r.status, 403); assert.equal(r.data.code, 'account_link_required'); pass('unlinked OAuth user never falls back to legacy/env credential');
   const reconnect = await login('bob'); r = await call(reconnect.access_token, 'moodle_list_courses'); assert.ok(textOf(r).includes('Bob course')); pass('reconnect restores same isolated identity'); r = await rpc(bob.access_token, 'tools/list'); assert.equal(r.status, 401); pass('reconnect revokes superseded grant');
   await fixture('revoke'); r = await rpc(alice.access_token, 'tools/list'); assert.equal(r.status, 401); r = await post('/oauth/token', { grant_type: 'refresh_token', client_id: clientId, refresh_token: refreshed.data.refresh_token }); assert.equal(r.status, 400); pass('real provider grant revocation rejects access and refresh tokens');

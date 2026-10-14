@@ -1,6 +1,7 @@
+import { z } from "zod";
 import type { OAuthResourceContext } from "@cloudflare/workers-oauth-provider";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { MoodleClient, MoodleTimeoutError } from "./moodle-client.js";
+import { MoodleClient, MoodleClientError, MoodleTimeoutError } from "./moodle-client.js";
 import { createSunLearnServer } from "./create-server.js";
 import { deriveFileLinkKey, fileLinkUrl, sealFileLink } from "./file-links.js";
 import type { FileRef } from "./file-id-store.js";
@@ -24,7 +25,20 @@ import type { Env, McpProps } from "./oauth/env.js";
 // resolveExternalToken (legacy static bearer, ctx.props.legacy === true) or
 // a real OAuth-issued token (ctx.props.userId is a derived stemlearn:... id).
 
+const MOODLE_RELINK_MESSAGE = "SUNLearn rejected the saved Moodle credential. Reconnect your first-linked SUNLearn environment and paste a fresh connection link. You do not need to delete your Learn MCP data.";
+const ToolCallRequestSchema = z.object({
+  jsonrpc: z.literal("2.0"), id: z.union([z.string(), z.number().finite()]),
+  method: z.literal("tools/call"),
+  params: z.object({ name: z.string(), arguments: z.record(z.unknown()).optional() }),
+});
+
 export function workerErrorResponse(error: unknown): Response {
+  if (error instanceof MoodleClientError && error.code === "authentication") {
+    return new Response(JSON.stringify({
+      error: MOODLE_RELINK_MESSAGE,
+      code: "moodle_relink_required",
+    }), { status: 502, headers: { "Content-Type": "application/json" } });
+  }
   const code = error instanceof MoodleTimeoutError ? "moodle_timeout" : "moodle_request_failed";
   const message = error instanceof MoodleTimeoutError
     ? "Moodle request timed out. Please try again."
@@ -108,14 +122,16 @@ export async function handleMcpRequest(
   // untouched, so on valid JSON the SDK below still does its own,
   // authoritative parse. This only checks JSON syntax, never JSON-RPC
   // message shape, so it can't diverge from or duplicate the SDK's parser.
+  let requestBody: unknown;
   if (request.method === "POST") {
     try {
-      await request.clone().json();
+      requestBody = await request.clone().json();
     } catch {
       return jsonRpcParseErrorResponse();
     }
   }
 
+  let stage = "credential_resolution";
   try {
     // Two clearly separated lanes, never confused: the legacy static bearer
     // (ctx.props.legacy, set only by our own resolveExternalToken) always
@@ -127,7 +143,9 @@ export async function handleMcpRequest(
     const config = ctx.props.legacy
       ? await resolveMoodleConfig(userId, env)
       : await resolveMoodleConfigForOAuthUser(userId, env);
+    stage = "moodle_authentication";
     const client = await MoodleClient.create(config);
+    stage = "course_context";
     const { resolver, multiSite } = await buildCourseContext(userId, client, config.baseUrl, env);
     // Anything other than the literal "false" keeps today's behavior
     // (content retrieval enabled) — this flag exists to let us turn full
@@ -150,9 +168,18 @@ export async function handleMcpRequest(
     // notifications) and avoids keeping a Worker connection open.
     const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
     await server.connect(transport);
+    stage = "mcp_transport";
     return await transport.handleRequest(request);
   } catch (err: unknown) {
     if (err instanceof AccountLinkRequiredError) return accountLinkRequiredResponse();
+    console.error("mcp_request_failed", { stage, code: err instanceof MoodleClientError ? err.code : "internal", lane: ctx.props.legacy ? "legacy" : "oauth" });
+    // Authentication already passed at the OAuth provider. This is a Moodle
+    // credential failure, not an expired connector grant. Deliver valid tool
+    // calls as MCP errors so clients do not collapse HTTP 502 into "Internal error".
+    if (err instanceof MoodleClientError && err.code === "authentication") {
+      const call = ToolCallRequestSchema.safeParse(requestBody);
+      if (call.success) return Response.json({ jsonrpc: "2.0", id: call.data.id, result: { isError: true, content: [{ type: "text", text: MOODLE_RELINK_MESSAGE }] } });
+    }
     return workerErrorResponse(err);
   }
 }

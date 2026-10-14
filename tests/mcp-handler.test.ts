@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { handleMcpRequest, workerErrorResponse } from "../src/mcp-handler.js";
-import { MoodleTimeoutError } from "../src/moodle-client.js";
+import { MoodleClientError, MoodleTimeoutError } from "../src/moodle-client.js";
 import { DEFAULT_USER_ID } from "../src/linking/resolve-config.js";
 import { saveCredential } from "../src/linking/credential-store.js";
 import { importCredentialKey } from "../src/linking/credential-crypto.js";
@@ -223,4 +223,15 @@ describe("handleMcpRequest", () => {
     expect(result.result.isError).toBe(true);
     expect(result.result.content[0]!.text).toContain("fileId is invalid, expired, or was not issued to the current user");
   });
+});
+
+
+it("classifies rejected Moodle credentials without claiming expiration or leaking upstream text", async () => {
+  const response = workerErrorResponse(new MoodleClientError("private token-secret", "authentication"));
+  expect(response.status).toBe(502);
+  const data = await response.json();
+  expect(data.code).toBe("moodle_relink_required");
+  expect(data.error).toContain("do not need to delete");
+  expect(data.error).not.toContain("expired");
+  expect(data.error).not.toContain("token-secret");
 });

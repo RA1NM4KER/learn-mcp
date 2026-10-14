@@ -149,6 +149,8 @@ describe("D1CredentialResolver / saveCredential / deleteCredential", () => {
       const resolver = new D1CredentialResolver(db, () => importCredentialKey(keyB64));
       const anchor = await resolver.resolveAnchor("user1");
       expect(anchor).toEqual({ baseUrl: STEM, credential: { token: "stem-token-v2" } });
+      expect(await resolver.resolve("user1", SUN)).toEqual({ token: "sun-token" });
+      expect(await countCredentials(db, "user1")).toBe(2);
     });
   });
 

@@ -19,7 +19,7 @@ describe("renderSunlearnConnectPage — disconnect", () => {
   it("shows no disconnect action when disconnectFormAction is not provided", () => {
     const html = renderSunlearnConnectPage({ sites: SITES, sessionId: "s1", panels: PANELS });
     expect(html).not.toContain(">Disconnect<");
-    expect(html).toContain('class="badge badge-success">Connected<');
+    expect(html).toContain('class="badge badge-success">Saved<');
   });
 
   it("shows a Disconnect action only on connected sites once disconnectFormAction is provided", () => {
@@ -64,4 +64,14 @@ describe("renderSunlearnConnectPage — disconnect", () => {
     expect(html.slice(dialogStart, dialogStart + 40)).toContain(" open");
     expect(html).toContain('document.getElementById("panel-sunlearn").showModal();');
   });
+});
+
+
+it("offers credential replacement for a saved site without disconnecting or deleting data", () => {
+  const html = renderSunlearnConnectPage({ sites: SITES, sessionId: "s1", panels: [...PANELS, { siteId: "stemlearn", siteName: "STEMLearn", launchUrl: "https://stemlearn.sun.ac.za/admin/tool/mobile/launch.php", formAction: "/authorize/link" }] });
+  expect(html).toContain(">Reconnect</button>");
+  expect(html).toContain("getElementById('panel-stemlearn').showModal()");
+  expect(html).toContain('id="panel-stemlearn"');
+  expect(html).toContain("Your other sites and Learn MCP data are kept.");
+  expect(html).not.toContain(">Disconnect<");
 });
