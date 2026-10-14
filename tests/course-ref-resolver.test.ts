@@ -156,3 +156,16 @@ describe("createAnchorOnlyResolver", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+it("names a rejected non-anchor credential and gives its own recovery link", async () => {
+  const anchor = await makeAnchorClient();
+  const store = new GlobalRefStore(randomKeyB64Url());
+  const resolver = new CourseRefResolver("stemlearn", anchor, "user1", store, async () => emsConfig(), "https://learnmcp.kefas.co.za/mcp");
+  const ref = await store.seal({ userId: "user1", siteId: "emslearn", kind: "course", id: 100 });
+  mockFetch.mockResolvedValueOnce(jsonResponse({ exception: "moodle_exception", errorcode: "invalidtoken", message: "private upstream ems-tok" }));
+  const result = await resolver.resolve("course", ref);
+  expect(result.ok).toBe(false);
+  if (result.ok) throw new Error("Unexpected authorization");
+  expect(result.message).toContain("[Reconnect EMSLearn](https://learnmcp.kefas.co.za/reconnect?site=emslearn)");
+  expect(result.message).not.toContain("ems-tok");
+});

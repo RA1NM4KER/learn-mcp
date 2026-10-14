@@ -7,6 +7,7 @@ import { handleAuthorize, handleAuthorizeLink, handleAuthorizeContinue, handleAu
 import { DEFAULT_USER_ID } from "../linking/resolve-config.js";
 import { handleFileLinkRequest } from "../file-links.js";
 import { issuerForRequest } from "./issuer.js";
+import { handleReconnect } from "./reconnect.js";
 import { PRODUCT_NAME } from "../brand.js";
 
 // This Worker serves its current canonical custom-domain issuer plus every
@@ -16,6 +17,8 @@ import { PRODUCT_NAME } from "../brand.js";
 
 async function defaultHandlerFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
+
+  if ((url.pathname === "/reconnect" && request.method === "GET") || (url.pathname === "/reconnect/link" && request.method === "POST")) return handleReconnect(request, env);
 
   if (url.pathname === "/authorize" && request.method === "GET") {
     return handleAuthorize(request, env);

@@ -124,7 +124,7 @@ export async function handleLinkComplete(request: Request, env: LinkingEnv): Pro
   if (!session) return fail(400, LINK_EXPIRED);
   // Defense in depth: a session created by GET /authorize belongs to the
   // OAuth completion endpoint (src/oauth/routes.ts), never this one.
-  if (session.oauthRequestJson) return fail(400, LINK_ISNT_VALID);
+  if (session.oauthRequestJson || session.userId !== DEFAULT_USER_ID) return fail(400, LINK_ISNT_VALID);
   // Every session created by handleLinkStart is site-bound; a NULL here
   // would only occur for a row that predates multi-site (migration leaves
   // old rows' moodle_base_url NULL) and has no safe site to verify against.

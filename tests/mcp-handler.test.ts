@@ -1,3 +1,4 @@
+import { moodleReconnectMessage } from "../src/linking/recovery-message.js";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { handleMcpRequest, workerErrorResponse } from "../src/mcp-handler.js";
 import { MoodleClientError, MoodleTimeoutError } from "../src/moodle-client.js";
@@ -234,4 +235,13 @@ it("classifies rejected Moodle credentials without claiming expiration or leakin
   expect(data.error).toContain("do not need to delete");
   expect(data.error).not.toContain("expired");
   expect(data.error).not.toContain("token-secret");
+});
+
+
+it("names the affected environment and gives a public recovery link without credentials", () => {
+  const message = moodleReconnectMessage("https://stemlearn.sun.ac.za", "https://learnmcp.kefas.co.za/mcp");
+  expect(message).toContain("[Reconnect STEMLearn](https://learnmcp.kefas.co.za/reconnect?site=stemlearn)");
+  expect(message).toContain("data and other connections are kept");
+  expect(message).not.toContain("expired");
+  expect(moodleReconnectMessage("https://stemlearn.sun.ac.za", "https://learnmcp.kefas.co.za/mcp", true)).toContain("https://learnmcp.kefas.co.za/connect");
 });

@@ -1,4 +1,5 @@
-import { MoodleClient } from "./moodle-client.js";
+import { moodleReconnectMessage } from "./linking/recovery-message.js";
+import { MoodleClient, MoodleClientError } from "./moodle-client.js";
 import type { Config } from "./config.js";
 import { GlobalRefStore, type GlobalRefKind } from "./global-ref.js";
 import { getSiteById } from "./sunlearn-sites.js";
@@ -28,6 +29,7 @@ export class CourseRefResolver {
     private readonly canonicalUserId: string,
     private readonly refStore: GlobalRefStore | undefined,
     private readonly resolveSiteConfig: (siteId: string) => Promise<Config | null>,
+    private readonly recoveryOrigin?: string,
   ) {}
 
   private clientForSite(siteId: string): Promise<MoodleClient | null> {
@@ -40,7 +42,8 @@ export class CourseRefResolver {
         if (!config) return null;
         try {
           return await MoodleClient.create(config);
-        } catch {
+        } catch (error) {
+          if (error instanceof MoodleClientError && error.code === "authentication") throw error;
           return null;
         }
       })();
@@ -57,7 +60,15 @@ export class CourseRefResolver {
     if (!this.refStore) return { ok: false, message: INVALID_REF_MESSAGE };
     const decoded = await this.refStore.open(ref, this.canonicalUserId, kind);
     if (!decoded) return { ok: false, message: INVALID_REF_MESSAGE };
-    const client = await this.clientForSite(decoded.siteId);
+    let client: MoodleClient | null;
+    try { client = await this.clientForSite(decoded.siteId); }
+    catch (error) {
+      if (!(error instanceof MoodleClientError) || error.code !== "authentication") throw error;
+      const site = getSiteById(decoded.siteId);
+      return { ok: false, message: this.recoveryOrigin
+        ? moodleReconnectMessage(site?.baseUrl, this.recoveryOrigin)
+        : `Your ${site?.name ?? "SUNLearn"} connection needs reconnecting. Reconnect this environment through your assistant's settings. Your Learn MCP data is kept.` };
+    }
     if (!client) return { ok: false, message: SITE_NOT_CONNECTED_MESSAGE };
     return { ok: true, client, id: decoded.id, siteId: decoded.siteId, isAnchor: decoded.siteId === this.anchorSiteId };
   }

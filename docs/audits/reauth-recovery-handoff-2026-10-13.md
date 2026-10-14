@@ -43,3 +43,12 @@ Files: `src/linking/sunlearn-connect-page.ts`, `src/oauth/routes.ts`, `src/mcp-h
 - Run a production reconnect and verify the connected client's error/recovery experience without deleting data.
 - If the failure recurs, use safe stage/code diagnostics to determine whether Moodle rejected the remote credential or another bootstrap stage failed.
 - Determine the original rejection cause if evidence becomes available; do not claim expiration or that the historical root cause is resolved.
+
+
+## Direct recovery link — 14 October follow-up
+
+Rejected anchor credentials now produce a message naming the environment and a public `/reconnect?site=...` link. Non-anchor course references receive the same per-site guidance. This is a Markdown link delivered through MCP, not a native ChatGPT button; discovery failures can still be masked by the connector UI.
+
+The standalone recovery page authenticates a fresh site-bound Moodle proof and looks up an existing identity alias. It replaces only that verified account/site credential, preserves OAuth grants and other data, and issues no OAuth token. Recovery sessions cannot be submitted to legacy or OAuth authorization endpoints; completion is atomic and single-use. No credential, identity or session capability appears in the public recovery URL.
+
+Validation: build, 468 unit tests, 60 real-provider/workerd security checks, 23 SDK compatibility checks, and whitespace checks passed. Security regressions include the actual error-link → recovery-page → verified replacement → original OAuth grant path, wrong-site proofs, unknown identities, caller-supplied identity/site tampering, session replay, and cross-lane confusion. The original Moodle token rejection cause remains unknown.

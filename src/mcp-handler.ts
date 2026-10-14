@@ -1,3 +1,4 @@
+import { MOODLE_RELINK_MESSAGE, moodleReconnectMessage } from "./linking/recovery-message.js";
 import { z } from "zod";
 import type { OAuthResourceContext } from "@cloudflare/workers-oauth-provider";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -25,17 +26,18 @@ import type { Env, McpProps } from "./oauth/env.js";
 // resolveExternalToken (legacy static bearer, ctx.props.legacy === true) or
 // a real OAuth-issued token (ctx.props.userId is a derived stemlearn:... id).
 
-const MOODLE_RELINK_MESSAGE = "SUNLearn rejected the saved Moodle credential. Reconnect your first-linked SUNLearn environment and paste a fresh connection link. You do not need to delete your Learn MCP data.";
+
 const ToolCallRequestSchema = z.object({
   jsonrpc: z.literal("2.0"), id: z.union([z.string(), z.number().finite()]),
   method: z.literal("tools/call"),
   params: z.object({ name: z.string(), arguments: z.record(z.unknown()).optional() }),
 });
 
-export function workerErrorResponse(error: unknown): Response {
+
+export function workerErrorResponse(error: unknown, recoveryMessage = MOODLE_RELINK_MESSAGE): Response {
   if (error instanceof MoodleClientError && error.code === "authentication") {
     return new Response(JSON.stringify({
-      error: MOODLE_RELINK_MESSAGE,
+      error: recoveryMessage,
       code: "moodle_relink_required",
     }), { status: 502, headers: { "Content-Type": "application/json" } });
   }
@@ -87,6 +89,7 @@ async function buildCourseContext(
   anchorClient: MoodleClient,
   anchorBaseUrl: string,
   env: Env,
+  recoveryOrigin: string,
 ): Promise<{ resolver: CourseRefResolver; multiSite?: MultiSiteContext }> {
   const anchorSite = getSiteByBaseUrl(anchorBaseUrl);
   if (!anchorSite || !env.CREDENTIAL_ENCRYPTION_KEY) {
@@ -97,7 +100,7 @@ async function buildCourseContext(
   const resolver = new CourseRefResolver(anchorSite.id, anchorClient, userId, refStore, (siteId) => {
     const site = getSiteById(siteId);
     return site ? resolveMoodleConfigForSite(userId, site, env) : Promise.resolve(null);
-  });
+  }, recoveryOrigin);
 
   const allConfigs = await resolveAllMoodleConfigsForOAuthUser(userId, env);
   const additionalSites = allConfigs.filter(({ site }) => site.baseUrl !== anchorSite.baseUrl);
@@ -132,6 +135,7 @@ export async function handleMcpRequest(
   }
 
   let stage = "credential_resolution";
+  let moodleBaseUrl: string | undefined;
   try {
     // Two clearly separated lanes, never confused: the legacy static bearer
     // (ctx.props.legacy, set only by our own resolveExternalToken) always
@@ -143,10 +147,11 @@ export async function handleMcpRequest(
     const config = ctx.props.legacy
       ? await resolveMoodleConfig(userId, env)
       : await resolveMoodleConfigForOAuthUser(userId, env);
+    moodleBaseUrl = config.baseUrl;
     stage = "moodle_authentication";
     const client = await MoodleClient.create(config);
     stage = "course_context";
-    const { resolver, multiSite } = await buildCourseContext(userId, client, config.baseUrl, env);
+    const { resolver, multiSite } = await buildCourseContext(userId, client, config.baseUrl, env, request.url);
     // Anything other than the literal "false" keeps today's behavior
     // (content retrieval enabled) — this flag exists to let us turn full
     // file-content access off quickly in response to future guidance, not to
@@ -176,10 +181,11 @@ export async function handleMcpRequest(
     // Authentication already passed at the OAuth provider. This is a Moodle
     // credential failure, not an expired connector grant. Deliver valid tool
     // calls as MCP errors so clients do not collapse HTTP 502 into "Internal error".
+    const recoveryMessage = moodleReconnectMessage(moodleBaseUrl, request.url, ctx.props.legacy);
     if (err instanceof MoodleClientError && err.code === "authentication") {
       const call = ToolCallRequestSchema.safeParse(requestBody);
-      if (call.success) return Response.json({ jsonrpc: "2.0", id: call.data.id, result: { isError: true, content: [{ type: "text", text: MOODLE_RELINK_MESSAGE }] } });
+      if (call.success) return Response.json({ jsonrpc: "2.0", id: call.data.id, result: { isError: true, content: [{ type: "text", text: recoveryMessage }] } });
     }
-    return workerErrorResponse(err);
+    return workerErrorResponse(err, recoveryMessage);
   }
 }
