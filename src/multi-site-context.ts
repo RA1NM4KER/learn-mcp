@@ -1,4 +1,4 @@
-import { MoodleClient } from "./moodle-client.js";
+import { MoodleClient, MoodleClientError } from "./moodle-client.js";
 import type { Config } from "./config.js";
 import type { SunlearnSite } from "./sunlearn-sites.js";
 import type { GlobalRefKind } from "./global-ref.js";
@@ -23,12 +23,19 @@ export interface ConnectedSite {
  */
 export interface MultiSiteContext {
   readonly anchorSite: ConnectedSite;
+  readonly recoveryOrigin?: string;
   readonly additionalSites: readonly { site: SunlearnSite; config: Config }[];
   /** A passthrough for the anchor site — same contract as CourseRefResolver.sealIfNeeded, which this is always backed by. */
   seal(kind: GlobalRefKind, siteId: string, id: number): Promise<number | string>;
 }
 
+export interface SiteFailure {
+  readonly site: ConnectedSite;
+  readonly code: MoodleClientError["code"] | "internal";
+}
+
 export interface SiteMapResult<T> {
+  readonly failures: SiteFailure[];
   readonly results: { site: ConnectedSite; isAnchor: boolean; value: T }[];
   /** Display names of sites that couldn't be reached — a failure here never fails the whole call. */
   readonly unavailable: string[];
@@ -59,15 +66,21 @@ export async function mapAccountWideSites<T>(
 
   type SiteResult = { site: ConnectedSite; isAnchor: boolean; value: T };
   const unavailable: string[] = [];
+  const failures: SiteFailure[] = [];
   const settled = await mapWithConcurrency<typeof targets[number], SiteResult | null>(targets, MULTI_SITE_POLICY.fanOutConcurrency, async (target) => {
+    let stage = "site_authentication";
     try {
       const client = await target.getClient();
+      stage = "site_operation";
       return { site: target.site, isAnchor: target.isAnchor, value: await fn(target.site, client, target.isAnchor) };
-    } catch {
+    } catch (error) {
+      const code = error instanceof MoodleClientError ? error.code : "internal";
+      failures.push({ site: target.site, code });
+      console.error("mcp_site_failed", { site: target.site.id, code, stage });
       unavailable.push(target.site.name);
       return null;
     }
   });
 
-  return { results: settled.filter((r): r is SiteResult => r !== null), unavailable };
+  return { results: settled.filter((r): r is SiteResult => r !== null), unavailable, failures };
 }

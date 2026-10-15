@@ -21,6 +21,7 @@ const identities = new Map([
 ]);
 let mode = "normal";
 let rejectOldBob = false;
+let rejectEms = false;
 let courseAccess = true;
 let submissionAccess = true;
 const requests: { host: string; fn: string; method: string; identity: string }[] = [];
@@ -35,6 +36,7 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise
   const token = body.get("wstoken") ?? url.searchParams.get("token") ?? "";
   const identity = identities.get(token);
   if (!identity || url.origin !== identity.base) throw new Error("Fixture refused a credential destination");
+  if (rejectEms && token === "fixture-alice-ems") return json({ exception: "moodle_exception", errorcode: "invalidtoken", message: "Private fixture-alice-ems" });
   if (rejectOldBob && token === "fixture-bob") return json({ exception: "moodle_exception", errorcode: "invalidtoken", message: "Private fixture credential rejection" });
   const fn = body.get("wsfunction") ?? "file";
   requests.push({ host: url.host, fn, method: init?.method ?? "GET", identity: identity.name });
@@ -90,6 +92,7 @@ export default {
     const userId = await lookupAlias(env.DB, stem, identities.get(userToken)!.id);
     if (!userId) return new Response("Fixture identity missing", { status: 400 });
     switch (data.action) {
+      case "reject-ems": rejectEms = data.value === "deny"; return json({ ok: true });
       case "reject-old-bob": rejectOldBob = true; return json({ ok: true });
       case "mode": mode = data.value ?? "normal"; return json({ ok: true });
       case "submission-access": submissionAccess = data.value !== "deny"; return json({ ok: true });

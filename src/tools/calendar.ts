@@ -1,3 +1,4 @@
+import { renderSiteFailures } from "./site-failures.js";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
@@ -153,18 +154,18 @@ export async function getCalendarEventsAccountWide(
   daysAhead: number,
 ): Promise<string> {
   if (!multiSite || multiSite.additionalSites.length === 0) return getCalendarEvents(client, undefined, daysAhead);
-  const { results, unavailable } = await mapAccountWideSites(client, multiSite, async (_site, siteClient) =>
+  const { results, unavailable, failures } = await mapAccountWideSites(client, multiSite, async (_site, siteClient) =>
     getCalendarEvents(siteClient, undefined, daysAhead),
   );
   const empty = `No upcoming events in the next ${daysAhead} days.`;
   const rendered = results.map((result) => result.value).filter((value) => value !== empty);
   if (rendered.length === 0) {
     return unavailable.length > 0
-      ? `${empty}\n\n_Temporarily unavailable: ${unavailable.join(", ")}._`
+      ? `Calendar could not be fully checked.\n\n${renderSiteFailures(unavailable, failures, multiSite)}`
       : empty;
   }
   const body = rendered.map((value) => value.replace(`## Upcoming Events (next ${daysAhead} days)\n\n`, "")).join("\n");
-  const unavailableNote = unavailable.length > 0 ? `\n_Temporarily unavailable: ${unavailable.join(", ")}._` : "";
+  const unavailableNote = unavailable.length > 0 ? `\n${renderSiteFailures(unavailable, failures, multiSite)}` : "";
   return truncateText(`## Upcoming Events (next ${daysAhead} days)\n\n${body}${unavailableNote}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);
 }
 

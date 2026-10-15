@@ -112,6 +112,13 @@ try {
   const aCourses = await call(alice.access_token, 'moodle_list_courses'); const bCourses = await call(bob.access_token, 'moodle_list_courses'); safe(aCourses.text); safe(bCourses.text);
   assert.ok(textOf(aCourses).includes('Alice course') && textOf(aCourses).includes('Alice EMS course')); assert.ok(textOf(bCourses).includes('Bob course')); assert.ok(!textOf(bCourses).includes('Alice course')); pass('actual authenticated cross-user and linked-site course isolation');
   const emsRef = textOf(aCourses).split('\n').find(line => line.includes('Alice EMS course')).match(/ID: `([^`]+)`/)[1];
+  await fixture('reject-ems', { value: 'deny' });
+  for (const tool of ['moodle_list_courses', 'moodle_get_notifications', 'moodle_get_calendar_events', 'student_brief']) {
+    r = await call(alice.access_token, tool);
+    assert.equal(r.status, 200); assert.match(textOf(r), /\[Reconnect EMSLearn\]\([^)]*reconnect\?site=emslearn\)/); assert.match(textOf(r), /Results are incomplete/); safe(r.text);
+    pass(`secondary-site authentication recovery survives ${tool} aggregation`);
+  }
+  await fixture('reject-ems', { value: 'allow' });
   r = await call(bob.access_token, 'moodle_get_course', { courseId: emsRef }); assert.equal(r.data.result?.isError, true); safe(r.text); pass('cross-user secondary-site course reference rejected');
   const files = await call(alice.access_token, 'moodle_list_resources', { courseId: 1 }); const fileId = textOf(files).match(/fileId: `([^`]+)`/)[1]; safe(files.text);
   r = await call(alice.access_token, 'moodle_download_file', { fileId }); assert.ok(textOf(r).includes('fixture notes')); safe(r.text); pass('authorized file retrieved through real transport');

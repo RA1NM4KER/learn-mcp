@@ -1,3 +1,4 @@
+import { renderSiteFailures } from "./site-failures.js";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
@@ -54,7 +55,7 @@ export async function getNotificationsAccountWide(
 ): Promise<string> {
   if (multiSite.additionalSites.length === 0) return getNotifications(client, limit, since);
 
-  const { results, unavailable } = await mapAccountWideSites(client, multiSite, async (_site, siteClient) => {
+  const { results, unavailable, failures } = await mapAccountWideSites(client, multiSite, async (_site, siteClient) => {
     if (!siteClient.supports("message_popup_get_popup_notifications")) return null;
     return loadNotifications(siteClient, limit);
   });
@@ -70,10 +71,10 @@ export async function getNotificationsAccountWide(
   const recent = merged.filter(({ n }) => since === undefined || (n.timecreated >= since && n.timecreated <= Date.now() / 1000));
   const capped = recent.slice(0, limit);
 
-  const notes = unavailable.length > 0 ? [`_Temporarily unavailable: ${unavailable.map((n) => truncateText(n, TEXT_OUTPUT_POLICY.maxLabelCharacters)).join(", ")}._`, ""] : [];
+  const notes = unavailable.length > 0 ? [renderSiteFailures(unavailable, failures, multiSite), ""] : [];
   if (merged.length > capped.length) notes.push(`_${merged.length - capped.length} fetched notifications outside the requested window or limit were omitted._`, "");
   if (capped.length === 0) {
-    return notes.length ? `No notifications found.\n\n${notes.join("\n")}` : "No notifications found.";
+    return notes.length ? `${unavailable.length ? "Notifications could not be fully checked." : "No notifications found."}\n\n${notes.join("\n")}` : "No notifications found.";
   }
 
   const lines: string[] = [`## Notifications (${totalUnread} unread)\n`, ...notes];

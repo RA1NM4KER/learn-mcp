@@ -1,3 +1,4 @@
+import { renderSiteFailures } from "./site-failures.js";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MoodleClient } from "../moodle-client.js";
@@ -75,7 +76,7 @@ export async function listCourses(client: MoodleClient, multiSite?: MultiSiteCon
   type Row = { siteName: string; fullname: string; shortname: string; idLabel: string };
   const rows: Row[] = [];
 
-  const { results, unavailable } = await mapAccountWideSites(client, multiSite, (_site, siteClient) => loadEnrolledCourses(siteClient));
+  const { results, unavailable, failures } = await mapAccountWideSites(client, multiSite, (_site, siteClient) => loadEnrolledCourses(siteClient));
   for (const { site, isAnchor, value: courses } of results) {
     for (const c of courses) {
       const idLabel = isAnchor ? String(c.id) : String(await multiSite.seal("course", site.id, c.id));
@@ -92,7 +93,7 @@ export async function listCourses(client: MoodleClient, multiSite?: MultiSiteCon
   );
   const notes = [
     rows.length > displayed.length ? "_Showing the first 100 courses._" : "",
-    unavailable.length > 0 ? `_Temporarily unavailable: ${unavailable.map((n) => truncateText(n, TEXT_OUTPUT_POLICY.maxLabelCharacters)).join(", ")}._` : "",
+    unavailable.length > 0 ? renderSiteFailures(unavailable, failures, multiSite) : "",
     "_Every ID shown above, including opaque ones, can be passed directly into any other tool (moodle_get_course, moodle_list_assignments, moodle_get_grades, course_overview, etc.) exactly as given._",
   ].filter(Boolean);
   return truncateText(`## Your Courses\n\n${lines.join("\n")}${notes.length ? `\n\n${notes.join("\n")}` : ""}`, TEXT_OUTPUT_POLICY.maxMcpResponseCharacters);

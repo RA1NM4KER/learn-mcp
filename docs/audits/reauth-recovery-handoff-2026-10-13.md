@@ -52,3 +52,12 @@ Rejected anchor credentials now produce a message naming the environment and a p
 The standalone recovery page authenticates a fresh site-bound Moodle proof and looks up an existing identity alias. It replaces only that verified account/site credential, preserves OAuth grants and other data, and issues no OAuth token. Recovery sessions cannot be submitted to legacy or OAuth authorization endpoints; completion is atomic and single-use. No credential, identity or session capability appears in the public recovery URL.
 
 Validation: build, 468 unit tests, 60 real-provider/workerd security checks, 23 SDK compatibility checks, and whitespace checks passed. Security regressions include the actual error-link → recovery-page → verified replacement → original OAuth grant path, wrong-site proofs, unknown identities, caller-supplied identity/site tampering, session replay, and cross-lane confusion. The original Moodle token rejection cause remains unknown.
+
+
+## Account-wide secondary-site failures — 15 October correction
+
+The previous change missed `mapAccountWideSites`: its catch block discarded typed failures before account-wide tools could render the recovery link. This reproduced as HTTP 200 with no courses and “Temporarily unavailable: STEMLearn”; the upstream failure category could not be established from the old logs.
+
+The mapper now retains per-site typed failure codes and emits safe site/code/stage diagnostics. A tool-layer renderer gives authentication failures the environment-specific recovery link while retaining temporary-unavailability guidance for other failures. Courses, notifications, calendar, deadlines and the student brief preserve these warnings and explicitly label incomplete results. Healthy environments remain available. No raw Moodle errors or credentials are logged or rendered.
+
+Build, 474 unit tests, 64 real-provider/workerd security checks and 23 SDK compatibility checks passed. New tests exercise secondary-site `invalidtoken` responses through all four affected remote tools, plus deadline rendering and timeout classification. These tests prove the reporting correction, not the historical cause of the production credential failure.

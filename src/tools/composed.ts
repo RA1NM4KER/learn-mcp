@@ -1,3 +1,4 @@
+import { renderSiteFailures } from "./site-failures.js";
 import { z } from "zod";
 import { checkDocumentDeadline } from "./deadline-check.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -272,7 +273,7 @@ const TIMING_BUCKET_ORDER: Record<TimingBucket, number> = {
 export interface BriefCourse { baseUrl: string; id: number }
 
 export async function upcomingAndOverdue(client: MoodleClient, multiSite?: MultiSiteContext, selectedCourses?: readonly BriefCourse[]): Promise<string> {
-  const { results, unavailable } = await mapAccountWideSites(client, multiSite, async (_site, siteClient) => {
+  const { results, unavailable, failures } = await mapAccountWideSites(client, multiSite, async (_site, siteClient) => {
     const enrolled = await loadEnrolledCourses(siteClient);
     const courses = selectedCourses ? enrolled.filter(c => selectedCourses.some(selected => selected.baseUrl === siteClient.baseUrl && selected.id === c.id)) : enrolled;
     if (!siteClient.supports("mod_assign_get_assignments")) return { client: siteClient, courses, assignments: null };
@@ -285,7 +286,7 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
   const totalCourses = results.reduce((sum, r) => sum + r.value.courses.length, 0);
   if (totalCourses === 0) {
     return unavailable.length > 0
-      ? `Enrollment could not be fully determined.\n\n_Temporarily unavailable: ${unavailable.join(", ")}._`
+      ? `Enrollment could not be fully determined.\n\n${renderSiteFailures(unavailable, failures, multiSite)}`
       : selectedCourses ? "No selected courses were found among your current enrollments." : "You are not enrolled in any courses.";
   }
 
@@ -407,12 +408,12 @@ export async function upcomingAndOverdue(client: MoodleClient, multiSite?: Multi
 
   if (tasks.length === 0 && historicalItems.length === 0) {
     return unavailable.length > 0
-      ? `No assignments with due dates found across your courses.\n\n_Temporarily unavailable: ${unavailable.join(", ")}._`
+      ? `Assignment deadlines could not be fully checked.\n\n${renderSiteFailures(unavailable, failures, multiSite)}`
       : "No assignments with due dates found across your courses.";
   }
 
   const lines: string[] = ["## Upcoming & Overdue\n"];
-  if (unavailable.length) lines.push(`_Temporarily unavailable: ${unavailable.join(", ")}._`, "");
+  if (unavailable.length) lines.push(renderSiteFailures(unavailable, failures, multiSite), "");
   if (omittedTasks) lines.push(`_Showing the highest-priority ${COMPOSED_TASK_POLICY.maxRendered} assignments; ${omittedTasks} additional assignments were omitted._`, "");
   const groups: [DisplayState, string][] = [
     ["overdue", "🔴 Overdue"],
@@ -495,7 +496,7 @@ export async function studentBrief(client: MoodleClient, multiSite?: MultiSiteCo
   }
   const calendarOnly = [...calendarGroups.entries()].flatMap(([heading, lines]) => [heading, ...lines]);
   const calendarSection = calendarOnly.length > 0
-    ? `\n\n### Quiz and practical closures\n${calendarOnly.join("\n")}`
+    ? `\n\n### Quiz and practical closures\n${calendarOnly.join("\n")}\n${calendar.split("\n").filter(line => line.startsWith("_")).join("\n")}`
     : `\n\n### Calendar coverage\n${calendar}`;
   const notificationBlocks = notifications.split(/\n\s*\n/).filter((block) => block.startsWith("- "));
   const ranked = { urgent: [] as string[], important: [] as string[], routine: [] as string[] };

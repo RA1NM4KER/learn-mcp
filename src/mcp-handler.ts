@@ -109,6 +109,7 @@ async function buildCourseContext(
   const multiSite: MultiSiteContext = {
     anchorSite: { id: anchorSite.id, name: anchorSite.name },
     additionalSites,
+    recoveryOrigin,
     seal: (kind, siteId, id) => resolver.sealIfNeeded(kind, siteId, id),
   };
   return { resolver, multiSite };
